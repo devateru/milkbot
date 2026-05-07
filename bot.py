@@ -131,21 +131,12 @@ def get_video_url(entry: dict) -> str | None:
 
 def get_thumbnail_urls(entry: dict) -> list[str]:
     """
-    고해상도 썸네일 후보를 우선 시도합니다.
-    YouTube 라이브 썸네일은 maxresdefault가 없는 경우도 있으므로 여러 후보를 순서대로 둡니다.
+    YouTube /streams 목록에서 받은 썸네일을 우선 사용합니다.
+    이전 버전처럼 maxresdefault.jpg를 먼저 쓰면, YouTube 목록에서 보이는 현재 라이브 썸네일과
+    다른 정적 썸네일이 잡힐 수 있습니다.
     """
     urls: list[str] = []
     video_id = get_video_id(entry)
-
-    if video_id:
-        urls.extend(
-            [
-                f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg",
-                f"https://i.ytimg.com/vi/{video_id}/sddefault.jpg",
-                f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
-                f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
-            ]
-        )
 
     thumbnails = entry.get("thumbnails") or []
     valid_thumbnails = [
@@ -153,15 +144,36 @@ def get_thumbnail_urls(entry: dict) -> list[str]:
         if isinstance(t, dict) and t.get("url")
     ]
 
-    valid_thumbnails.sort(
-        key=lambda t: (t.get("width") or 0) * (t.get("height") or 0),
-        reverse=True,
-    )
+    def thumbnail_score(t: dict) -> tuple[int, int]:
+        url = str(t.get("url") or "").lower()
+        area = (t.get("width") or 0) * (t.get("height") or 0)
 
+        live_bonus = 1 if "live" in url else 0
+        hq720_bonus = 1 if "hq720" in url else 0
+
+        return (live_bonus + hq720_bonus, area)
+
+    valid_thumbnails.sort(key=thumbnail_score, reverse=True)
     urls.extend(t["url"] for t in valid_thumbnails)
 
     if entry.get("thumbnail"):
         urls.append(entry["thumbnail"])
+
+    if video_id:
+        # YouTube 라이브 목록에서 보이는 썸네일과 맞추기 위해 *_live 계열을 정적 썸네일보다 먼저 시도합니다.
+        urls.extend(
+            [
+                f"https://i.ytimg.com/vi/{video_id}/maxresdefault_live.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/hq720_live.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/sddefault_live.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/hqdefault_live.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/mqdefault_live.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/sddefault.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
+            ]
+        )
 
     deduped: list[str] = []
     seen = set()
@@ -295,7 +307,7 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
         good_age = (now - LAST_GOOD_TIME).total_seconds()
         if good_age < LAST_GOOD_MAX_SECONDS:
             fallback_minutes = max(1, int(round(good_age / 60)))
-            footer_text = f"*서버 이슈로 {fallback_minutes}분 전 기록을 대신 출력합니다."
+            footer_text = f"서버 이슈로 {fallback_minutes}분 전 기록을 대신 출력합니다."
 
             debug_rows.append(
                 f"ZERO_LIVE_RESULT_IGNORED | keeping last good result from {int(good_age)}s ago"
@@ -345,12 +357,25 @@ def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
 
 
 def download_image(url: str) -> Image.Image:
-    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
+    )
 
     with urllib.request.urlopen(request, timeout=8) as response:
         data = response.read()
 
-    return Image.open(BytesIO(data)).convert("RGB")
+    image = Image.open(BytesIO(data)).convert("RGB")
+
+    # 너무 작은 fallback 이미지는 고해상도 격자에서 보기 좋지 않으므로 다음 후보를 시도합니다.
+    if image.width < 320 or image.height < 180:
+        raise ValueError(f"thumbnail too small: {image.width}x{image.height}")
+
+    return image
 
 
 def download_first_available_image(urls: list[str]) -> Image.Image | None:
@@ -374,17 +399,18 @@ def draw_centered_multiline(
     x1, y1, x2, y2 = box
 
     line_boxes = [draw.textbbox((0, 0), line, font=font) for line in lines]
-    line_heights = [b[3] - b[1] for b in line_boxes]
-    total_height = sum(line_heights) + line_spacing * (len(lines) - 1)
+    line_sizes = [(b[2] - b[0], b[3] - b[1]) for b in line_boxes]
+    total_height = sum(height for _, height in line_sizes) + line_spacing * (len(lines) - 1)
 
-    y = y1 + ((y2 - y1) - total_height) // 2
+    cursor_y = y1 + ((y2 - y1) - total_height) // 2
 
-    for line, bbox in zip(lines, line_boxes):
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        x = x1 + ((x2 - x1) - text_width) // 2
+    for line, bbox, (text_width, text_height) in zip(lines, line_boxes, line_sizes):
+        # textbbox의 bbox[1]은 폰트 ascender/descender 때문에 0이 아닐 수 있습니다.
+        # 이 값을 보정하지 않으면 시각적으로 텍스트가 아래로 밀려 보입니다.
+        x = x1 + ((x2 - x1) - text_width) // 2 - bbox[0]
+        y = cursor_y - bbox[1]
         draw.text((x, y), line, font=font, fill=fill)
-        y += text_height + line_spacing
+        cursor_y += text_height + line_spacing
 
 
 def draw_live_label(tile: Image.Image, label: str) -> Image.Image:
@@ -409,7 +435,12 @@ def draw_live_label(tile: Image.Image, label: str) -> Image.Image:
     y1 = y2 - box_h
 
     draw.rounded_rectangle((x1, y1, x2, y2), radius=12, fill=(0, 0, 0, 180))
-    draw.text((x1 + padding_x, y1 + padding_y - 3), label, font=font, fill=(255, 255, 255, 255))
+    draw.text(
+        (x1 + padding_x - text_bbox[0], y1 + padding_y - text_bbox[1]),
+        label,
+        font=font,
+        fill=(255, 255, 255, 255),
+    )
 
     tile_rgba = tile.convert("RGBA")
     tile_rgba.alpha_composite(overlay)
@@ -507,11 +538,11 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
 
     margin_x = 30
 
-    left_y = banner_y + (banner_h - left_h) // 2 - 2
-    right_y = banner_y + (banner_h - right_h) // 2 - 2
+    left_y = banner_y + (banner_h - left_h) // 2 - left_bbox[1]
+    right_y = banner_y + (banner_h - right_h) // 2 - right_bbox[1]
 
-    draw.text((margin_x, left_y), left_text, font=banner_font, fill=(255, 255, 255))
-    draw.text((grid_w - margin_x - right_w, right_y), right_text, font=banner_font, fill=(255, 255, 255))
+    draw.text((margin_x - left_bbox[0], left_y), left_text, font=banner_font, fill=(255, 255, 255))
+    draw.text((grid_w - margin_x - right_w - right_bbox[0], right_y), right_text, font=banner_font, fill=(255, 255, 255))
 
     output = BytesIO()
     canvas.save(output, format="JPEG", quality=JPEG_QUALITY, optimize=True, progressive=True)
@@ -595,7 +626,7 @@ async def gameplaza_live(interaction: discord.Interaction):
         if item["is_live"] and item["url"]:
             return f"[{machine_name}]({item['url']})"
 
-        return "[----]"
+        return "----"
 
     maimai_items = [item for item in items if item["group"] == "마이마이 디럭스"]
     chunithm_items = [item for item in items if item["group"] == "츄니즘"]

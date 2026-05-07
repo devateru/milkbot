@@ -14,58 +14,58 @@ CHANNEL_STREAMS_URL = "https://www.youtube.com/@GAMEPLAZA_C/streams"
 
 TARGET_STREAMS = [
     {
-        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (1번기) LIVE",
         "game": "maimai",
         "number": "1",
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (1번기) LIVE",
         "label": "마이마이 1번기",
         "group": "마이마이 디럭스",
     },
     {
-        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (2번기) LIVE",
         "game": "maimai",
         "number": "2",
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (2번기) LIVE",
         "label": "마이마이 2번기",
         "group": "마이마이 디럭스",
     },
     {
-        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (3번기) LIVE",
         "game": "maimai",
         "number": "3",
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (3번기) LIVE",
         "label": "마이마이 3번기",
         "group": "마이마이 디럭스",
     },
     {
-        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (4번기) LIVE",
         "game": "maimai",
         "number": "4",
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (4번기) LIVE",
         "label": "마이마이 4번기",
         "group": "마이마이 디럭스",
     },
     {
-        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (5번기) LIVE",
         "game": "maimai",
         "number": "5",
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (5번기) LIVE",
         "label": "마이마이 5번기",
         "group": "마이마이 디럭스",
     },
     {
-        "title": "광주 게임플라자 츄니즘 CHUNITHM (1번기) LIVE",
         "game": "chunithm",
         "number": "1",
+        "title": "광주 게임플라자 츄니즘 CHUNITHM (1번기) LIVE",
         "label": "츄니즘 1번기",
         "group": "츄니즘",
     },
     {
-        "title": "광주 게임플라자 츄니즘 CHUNITHM (2번기) LIVE",
         "game": "chunithm",
         "number": "2",
+        "title": "광주 게임플라자 츄니즘 CHUNITHM (2번기) LIVE",
         "label": "츄니즘 2번기",
         "group": "츄니즘",
     },
     {
-        "title": "광주 게임플라자 츄니즘 CHUNITHM (3번기) LIVE",
         "game": "chunithm",
         "number": "3",
+        "title": "광주 게임플라자 츄니즘 CHUNITHM (3번기) LIVE",
         "label": "츄니즘 3번기",
         "group": "츄니즘",
     },
@@ -77,13 +77,16 @@ CACHE_SECONDS = 45
 ZERO_RESULT_CACHE_SECONDS = 10
 CACHE_TIME: datetime | None = None
 CACHE_ITEMS: list[dict] | None = None
+CACHE_FOOTER_TEXT: str | None = None
+CACHE_NO_STREAM_WARNING_NEEDED = False
 
 LAST_GOOD_MAX_SECONDS = 120
 LAST_GOOD_TIME: datetime | None = None
 LAST_GOOD_ITEMS: list[dict] | None = None
 
-CACHE_FOOTER_TEXT: str | None = None
 RESPONSE_FOOTER_TEXT: str | None = None
+NO_STREAM_WARNING_NEEDED = False
+NO_STREAM_WARNING_TEXT = "감지된 라이브가 없어요. 서버 오류인 것 같다면 잠시 뒤 다시 시도해주세요."
 
 LAST_DEBUG_ROWS: list[str] = []
 
@@ -93,13 +96,22 @@ BORDER = 6
 BANNER_H = 84
 JPEG_QUALITY = 96
 
+# Thumbnail policy:
+# - keep final grid at 1280x720 per tile
+# - prefer YouTube live 720p thumbnails
+# - cap the number of URL attempts so loading time does not grow too much
+THUMBNAIL_CANDIDATE_LIMIT = 7
+THUMBNAIL_DOWNLOAD_TIMEOUT = 6
+THUMBNAIL_MIN_WIDTH = 480
+THUMBNAIL_MIN_HEIGHT = 270
+
 DETAIL_CHECK_WHEN_FLAT_UNKNOWN = True
 DETAIL_WORKERS = 4
 DETAIL_TOTAL_TIMEOUT = 12
 DETAIL_SOCKET_TIMEOUT = 6
 MAX_DETAIL_CANDIDATES_PER_MACHINE = 4
 
-
+STREAM_EMPTY = False
 
 def normalize_title(text: str) -> str:
     text = unicodedata.normalize("NFKC", text or "")
@@ -111,25 +123,28 @@ def machine_key(game: str, number: str) -> str:
     return f"{game}:{number}"
 
 
+def target_title_to_key() -> dict[str, str]:
+    return {
+        normalize_title(target["title"]).lower(): machine_key(target["game"], target["number"])
+        for target in TARGET_STREAMS
+    }
+
+
 def title_to_machine_key(title: str) -> str | None:
-    title_norm = normalize_title(title)
+    title_norm = normalize_title(title).lower()
 
-    # 제목이 고정되어 있으므로 exact normalized title을 우선 사용합니다.
-    for target in TARGET_STREAMS:
-        if title_norm == normalize_title(target["title"]):
-            return machine_key(target["game"], target["number"])
+    exact_key = target_title_to_key().get(title_norm)
+    if exact_key:
+        return exact_key
 
-    # 예외적으로 공백/괄호 표기가 조금 달라졌을 때만 한국어 번호 패턴으로 보조 매칭합니다.
-    title_lower = title_norm.lower()
-
-    if "maimai" in title_lower or "마이마이" in title_lower:
+    if "maimai" in title_norm or "마이마이" in title_norm:
         game = "maimai"
-    elif "chunithm" in title_lower or "츄니즘" in title_lower:
+    elif "chunithm" in title_norm or "츄니즘" in title_norm:
         game = "chunithm"
     else:
         return None
 
-    match = re.search(r"(\d+)\s*(?:번기|번|호기)", title_lower)
+    match = re.search(r"(\d+)\s*(?:번기|번|호기)", title_norm)
     if not match:
         return None
 
@@ -178,6 +193,16 @@ def get_thumbnail_urls(entry: dict) -> list[str]:
     urls: list[str] = []
     video_id = get_video_id(entry)
 
+    # Prefer high-resolution live thumbnail endpoints first.
+    # These usually match the current YouTube live listing better than static maxresdefault.jpg.
+    if video_id:
+        urls.extend(
+            [
+                f"https://i.ytimg.com/vi/{video_id}/hq720_live.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/maxresdefault_live.jpg",
+            ]
+        )
+
     thumbnails = entry.get("thumbnails") or []
     valid_thumbnails = [
         t for t in thumbnails
@@ -187,9 +212,10 @@ def get_thumbnail_urls(entry: dict) -> list[str]:
     def thumbnail_score(t: dict) -> tuple[int, int]:
         url = str(t.get("url") or "").lower()
         area = (t.get("width") or 0) * (t.get("height") or 0)
-        live_bonus = 1 if "live" in url else 0
-        hq720_bonus = 1 if "hq720" in url else 0
-        return (live_bonus + hq720_bonus, area)
+        live_bonus = 2 if "live" in url else 0
+        hq720_bonus = 2 if "hq720" in url else 0
+        sd_bonus = 1 if "sddefault" in url else 0
+        return (live_bonus + hq720_bonus + sd_bonus, area)
 
     valid_thumbnails.sort(key=thumbnail_score, reverse=True)
     urls.extend(t["url"] for t in valid_thumbnails)
@@ -200,15 +226,11 @@ def get_thumbnail_urls(entry: dict) -> list[str]:
     if video_id:
         urls.extend(
             [
-                f"https://i.ytimg.com/vi/{video_id}/maxresdefault_live.jpg",
-                f"https://i.ytimg.com/vi/{video_id}/hq720_live.jpg",
                 f"https://i.ytimg.com/vi/{video_id}/sddefault_live.jpg",
                 f"https://i.ytimg.com/vi/{video_id}/hqdefault_live.jpg",
-                f"https://i.ytimg.com/vi/{video_id}/mqdefault_live.jpg",
                 f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg",
                 f"https://i.ytimg.com/vi/{video_id}/sddefault.jpg",
                 f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
-                f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
             ]
         )
 
@@ -219,6 +241,9 @@ def get_thumbnail_urls(entry: dict) -> list[str]:
         if url and url not in seen:
             deduped.append(url)
             seen.add(url)
+
+        if len(deduped) >= THUMBNAIL_CANDIDATE_LIMIT:
+            break
 
     return deduped
 
@@ -273,6 +298,7 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
     global CACHE_TIME, CACHE_ITEMS, LAST_DEBUG_ROWS
     global LAST_GOOD_TIME, LAST_GOOD_ITEMS
     global CACHE_FOOTER_TEXT, RESPONSE_FOOTER_TEXT
+    global CACHE_NO_STREAM_WARNING_NEEDED, NO_STREAM_WARNING_NEEDED
 
     now = datetime.now(KST)
 
@@ -283,9 +309,11 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
 
         if age < cache_limit:
             RESPONSE_FOOTER_TEXT = CACHE_FOOTER_TEXT
+            NO_STREAM_WARNING_NEEDED = CACHE_NO_STREAM_WARNING_NEEDED
             return CACHE_ITEMS
 
     RESPONSE_FOOTER_TEXT = None
+    NO_STREAM_WARNING_NEEDED = False
 
     entries = fetch_stream_entries()
 
@@ -413,14 +441,18 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
         CACHE_TIME = now
         CACHE_ITEMS = results
         CACHE_FOOTER_TEXT = None
+        CACHE_NO_STREAM_WARNING_NEEDED = False
         RESPONSE_FOOTER_TEXT = None
+        NO_STREAM_WARNING_NEEDED = False
         return results
 
     if LAST_GOOD_TIME is not None and LAST_GOOD_ITEMS is not None:
         good_age = (now - LAST_GOOD_TIME).total_seconds()
         if good_age < LAST_GOOD_MAX_SECONDS:
             fallback_minutes = max(1, int(round(good_age / 60)))
-            footer_text = f"라이브가 조회되지 않아 {fallback_minutes}분 전 기록을 대신 출력합니다."
+            footer_text = f"*라이브가 감지되지 않아 잠깐 전의 기록을 대신 출력했어요."
+
+            STREAM_EMPTY = True
 
             debug_rows.append(
                 f"ZERO_LIVE_RESULT_IGNORED | keeping last good result from {int(good_age)}s ago"
@@ -429,14 +461,18 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
             CACHE_TIME = now
             CACHE_ITEMS = LAST_GOOD_ITEMS
             CACHE_FOOTER_TEXT = footer_text
+            CACHE_NO_STREAM_WARNING_NEEDED = False
             RESPONSE_FOOTER_TEXT = footer_text
+            NO_STREAM_WARNING_NEEDED = False
             return LAST_GOOD_ITEMS
 
     LAST_DEBUG_ROWS = debug_rows
     CACHE_TIME = now
     CACHE_ITEMS = results
     CACHE_FOOTER_TEXT = None
+    CACHE_NO_STREAM_WARNING_NEEDED = True
     RESPONSE_FOOTER_TEXT = None
+    NO_STREAM_WARNING_NEEDED = True
 
     return results
 
@@ -479,12 +515,12 @@ def download_image(url: str) -> Image.Image:
         },
     )
 
-    with urllib.request.urlopen(request, timeout=8) as response:
+    with urllib.request.urlopen(request, timeout=THUMBNAIL_DOWNLOAD_TIMEOUT) as response:
         data = response.read()
 
     image = Image.open(BytesIO(data)).convert("RGB")
 
-    if image.width < 320 or image.height < 180:
+    if image.width < THUMBNAIL_MIN_WIDTH or image.height < THUMBNAIL_MIN_HEIGHT:
         raise ValueError(f"thumbnail too small: {image.width}x{image.height}")
 
     return image
@@ -632,7 +668,10 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     draw.rectangle((0, banner_y, grid_w, total_h), fill=(0, 0, 0))
 
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
-    left_text = f"{now}  @광주 게임플라자"
+    if STREAM_EMPTY:
+        left_text = f"{now}*  @광주 게임플라자"
+    else:
+        left_text = f"{now}  @광주 게임플라자"
     right_text = "generated by @밀크봇"
     banner_font = load_font(34, bold=False)
 
@@ -661,9 +700,16 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     return output
 
 
-
 def get_response_footer_text() -> str | None:
     return RESPONSE_FOOTER_TEXT
+
+
+def should_send_no_stream_warning() -> bool:
+    return NO_STREAM_WARNING_NEEDED
+
+
+def get_no_stream_warning_text() -> str:
+    return NO_STREAM_WARNING_TEXT
 
 
 def get_debug_rows(limit: int | None = None) -> list[str]:

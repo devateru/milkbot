@@ -18,9 +18,7 @@ if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN is not set in .env")
 
 
-# 명령어 표시 여부는 bot.py에서 한 번에 관리합니다.
 ENABLE_DEBUG_COMMAND = False
-
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
@@ -38,8 +36,39 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("pong")
 
 
+if ENABLE_DEBUG_COMMAND:
+    @tree.command(name="겜플디버그", description="게임플라자 라이브 조회 디버그 정보를 확인합니다.")
+    async def gameplaza_debug(interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True, ephemeral=True)
+
+        try:
+            items = await asyncio.to_thread(livecheck.fetch_gameplaza_live_status, True)
+        except Exception as e:
+            await interaction.followup.send(f"디버그 실패:\n```{type(e).__name__}: {e}```", ephemeral=True)
+            return
+
+        status_lines = [
+            f"{item['label']}: {'LIVE' if item['is_live'] else 'OFFLINE'} | {item['url'] or '-'}"
+            for item in items
+        ]
+
+        debug_text = "\n".join(status_lines + ["", "--- RAW ENTRIES ---"] + livecheck.get_debug_rows(35))
+
+        if len(debug_text) > 1900:
+            debug_text = debug_text[:1900] + "\n... truncated"
+
+        await interaction.followup.send(f"```text\n{debug_text}\n```", ephemeral=True)
+
+
 @tree.command(name="겜플라이브", description="밀크봇한테 겜플 츄마이 라이브 현황 확인시키기")
-async def gameplaza_live(interaction: discord.Interaction):
+@app_commands.rename(ignore_no_stream_warning="항상 결과 출력하기")
+@app_commands.describe(
+    ignore_no_stream_warning="스트림이 감지되지 않아도 경고를 띄우지 않는 옵션; 기본값은 꺼짐입니다."
+)
+async def gameplaza_live(
+    interaction: discord.Interaction,
+    ignore_no_stream_warning: bool = False,
+):
     await interaction.response.defer(thinking=True)
 
     try:
@@ -67,6 +96,15 @@ async def gameplaza_live(interaction: discord.Interaction):
         color=discord.Color.blue(),
     )
 
+    def format_machine_link(item: dict) -> str:
+        match = re.search(r"(\d+)번기", item["label"])
+        machine_name = f"{match.group(1)}번기" if match else item["label"]
+
+        if item["is_live"] and item["url"]:
+            return f"[{machine_name}]({item['url']})"
+
+        return "[----]"
+
     maimai_items = [item for item in items if item["group"] == "마이마이 디럭스"]
     chunithm_items = [item for item in items if item["group"] == "츄니즘"]
 
@@ -91,39 +129,11 @@ async def gameplaza_live(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed, file=file)
 
-
-def format_machine_link(item: dict) -> str:
-    match = re.search(r"(\d+)번기", item["label"])
-    machine_name = f"{match.group(1)}번기" if match else item["label"]
-
-    if item["is_live"] and item["url"]:
-        return f"[{machine_name}]({item['url']})"
-
-    return "[----]"
-
-
-if ENABLE_DEBUG_COMMAND:
-    @tree.command(name="겜플디버그", description="게임플라자 /streams 조회 디버그 정보를 확인합니다.")
-    async def gameplaza_debug(interaction: discord.Interaction):
-        await interaction.response.defer(thinking=True, ephemeral=True)
-
-        try:
-            items = await asyncio.to_thread(livecheck.fetch_gameplaza_live_status, True)
-        except Exception as e:
-            await interaction.followup.send(f"디버그 실패:\n```{type(e).__name__}: {e}```", ephemeral=True)
-            return
-
-        status_lines = [
-            f"{item['label']}: {'LIVE' if item['is_live'] else 'OFFLINE'} | {item['url'] or '-'}"
-            for item in items
-        ]
-
-        debug_text = "\n".join(status_lines + ["", "--- RAW ENTRIES ---"] + livecheck.get_debug_rows(limit=35))
-
-        if len(debug_text) > 1900:
-            debug_text = debug_text[:1900] + "\n... truncated"
-
-        await interaction.followup.send(f"```text\n{debug_text}\n```", ephemeral=True)
+    if livecheck.should_send_no_stream_warning() and not ignore_no_stream_warning:
+        await interaction.followup.send(
+            livecheck.get_no_stream_warning_text(),
+            ephemeral=True,
+        )
 
 
 client.run(TOKEN)

@@ -5,7 +5,7 @@ ideas/TODOs
 
 - fix the offline checking logic
 
-- choose song by random
+- choose song by random \
   user can choose range of difficulty, randomly chooses ridiculus levels at small chance
   maybe use zutaku.dev (why make db when there is one publically)
 

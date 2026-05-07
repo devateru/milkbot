@@ -22,19 +22,22 @@ if not TOKEN:
 
 
 CHANNEL_STREAMS_URL = "https://www.youtube.com/@GAMEPLAZA_C/streams"
+CHANNEL_HANDLE = "@GAMEPLAZA_C"
+CHANNEL_KEYWORDS = ["GAMEPLAZA", "게임플라자", "gameplaza"]
 
 TARGET_STREAMS = [
-    {"title": "광주 게임플라자 마이마이 디럭스 maimai DX (1번기) LIVE", "label": "마이마이 1번기"},
-    {"title": "광주 게임플라자 마이마이 디럭스 maimai DX (2번기) LIVE", "label": "마이마이 2번기"},
-    {"title": "광주 게임플라자 마이마이 디럭스 maimai DX (3번기) LIVE", "label": "마이마이 3번기"},
-    {"title": "광주 게임플라자 마이마이 디럭스 maimai DX (4번기) LIVE", "label": "마이마이 4번기"},
-    {"title": "광주 게임플라자 마이마이 디럭스 maimai DX (5번기) LIVE", "label": "마이마이 5번기"},
-    {"title": "광주 게임플라자 츄니즘 CHUNITHM (1번기) LIVE", "label": "츄니즘 1번기"},
-    {"title": "광주 게임플라자 츄니즘 CHUNITHM (2번기) LIVE", "label": "츄니즘 2번기"},
-    {"title": "광주 게임플라자 츄니즘 CHUNITHM (3번기) LIVE", "label": "츄니즘 3번기"},
+    {"game": "maimai", "number": "1", "title": "광주 게임플라자 마이마이 디럭스 maimai DX (1번기) LIVE", "label": "마이마이 1번기"},
+    {"game": "maimai", "number": "2", "title": "광주 게임플라자 마이마이 디럭스 maimai DX (2번기) LIVE", "label": "마이마이 2번기"},
+    {"game": "maimai", "number": "3", "title": "광주 게임플라자 마이마이 디럭스 maimai DX (3번기) LIVE", "label": "마이마이 3번기"},
+    {"game": "maimai", "number": "4", "title": "광주 게임플라자 마이마이 디럭스 maimai DX (4번기) LIVE", "label": "마이마이 4번기"},
+    {"game": "maimai", "number": "5", "title": "광주 게임플라자 마이마이 디럭스 maimai DX (5번기) LIVE", "label": "마이마이 5번기"},
+    {"game": "chunithm", "number": "1", "title": "광주 게임플라자 츄니즘 CHUNITHM (1번기) LIVE", "label": "츄니즘 1번기"},
+    {"game": "chunithm", "number": "2", "title": "광주 게임플라자 츄니즘 CHUNITHM (2번기) LIVE", "label": "츄니즘 2번기"},
+    {"game": "chunithm", "number": "3", "title": "광주 게임플라자 츄니즘 CHUNITHM (3번기) LIVE", "label": "츄니즘 3번기"},
 ]
 
 KST = timezone(timedelta(hours=9))
+LAST_DEBUG_ROWS: list[str] = []
 
 
 def normalize_title(text: str) -> str:
@@ -43,7 +46,34 @@ def normalize_title(text: str) -> str:
     return text.strip()
 
 
+def machine_key(game: str, number: str) -> str:
+    return f"{game}:{number}"
+
+
+def title_to_machine_key(title: str) -> str | None:
+    title_norm = normalize_title(title).lower()
+
+    if "maimai" in title_norm or "마이마이" in title_norm:
+        game = "maimai"
+    elif "chunithm" in title_norm or "츄니즘" in title_norm:
+        game = "chunithm"
+    else:
+        return None
+
+    # Examples covered:
+    # (1번기), 1번기, 1 번기, 1번, 1호기, 1 호기
+    match = re.search(r"(\d+)\s*(?:번기|번|호기)", title_norm)
+    if not match:
+        return None
+
+    return machine_key(game, match.group(1))
+
+
 def get_video_url(entry: dict) -> str | None:
+    webpage_url = entry.get("webpage_url")
+    if webpage_url:
+        return webpage_url
+
     video_id = entry.get("id")
     if video_id:
         return f"https://www.youtube.com/watch?v={video_id}"
@@ -53,10 +83,6 @@ def get_video_url(entry: dict) -> str | None:
         if url.startswith("http"):
             return url
         return f"https://www.youtube.com/watch?v={url}"
-
-    webpage_url = entry.get("webpage_url")
-    if webpage_url:
-        return webpage_url
 
     return None
 
@@ -87,65 +113,11 @@ def get_thumbnail_url(entry: dict) -> str | None:
 
 
 def is_live_entry(entry: dict) -> bool:
-    live_status = entry.get("live_status")
-
-    return (
-        entry.get("is_live") is True
-        or live_status == "is_live"
-        or entry.get("was_live") is True and live_status == "is_live"
-    )
+    return entry.get("is_live") is True or entry.get("live_status") == "is_live"
 
 
-def target_key(title: str) -> str:
-    """
-    Exact title matching is fragile because YouTube/yt-dlp may expose titles
-    with minor spacing/case/symbol differences. This key focuses on cabinet type
-    and machine number instead.
-    """
-    title = normalize_title(title).lower()
-
-    if "maimai" in title or "마이마이" in title:
-        game = "maimai"
-    elif "chunithm" in title or "츄니즘" in title:
-        game = "chunithm"
-    else:
-        game = "unknown"
-
-    match = re.search(r"\(?\s*(\d+)\s*번기\s*\)?", title)
-    number = match.group(1) if match else "unknown"
-
-    return f"{game}:{number}"
-
-
-def extract_channel_stream_entries() -> list[dict]:
-    """
-    First pass: quickly collect candidate videos from the /streams tab.
-    Flat extraction is fast but live_status can be missing, so do not trust it alone.
-    """
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "extract_flat": "in_playlist",
-        "ignoreerrors": True,
-        "playlistend": 80,
-        "socket_timeout": 20,
-        "retries": 2,
-        "extractor_retries": 2,
-    }
-
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(CHANNEL_STREAMS_URL, download=False)
-
-    return info.get("entries", []) if info else []
-
-
-def extract_video_detail(video_url: str) -> dict | None:
-    """
-    Second pass: fetch each candidate video's detailed metadata.
-    This is slower, but live_status/is_live is much more reliable here.
-    """
-    ydl_opts = {
+def ydl_base_opts(flat: bool = False) -> dict:
+    opts = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
@@ -153,64 +125,156 @@ def extract_video_detail(video_url: str) -> dict | None:
         "socket_timeout": 20,
         "retries": 2,
         "extractor_retries": 2,
+        "nocheckcertificate": True,
     }
 
+    if flat:
+        opts["extract_flat"] = "in_playlist"
+
+    # Optional cookie support.
+    # If YouTube blocks the bot environment, export this in .env:
+    # YOUTUBE_COOKIES_FILE=C:/path/to/youtube_cookies.txt
+    cookiefile = os.getenv("YOUTUBE_COOKIES_FILE")
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
+
+    return opts
+
+
+def ydl_extract(url: str, flat: bool = False) -> dict | None:
     try:
-        with YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(video_url, download=False)
-    except Exception:
+        with YoutubeDL(ydl_base_opts(flat=flat)) as ydl:
+            return ydl.extract_info(url, download=False)
+    except Exception as e:
+        LAST_DEBUG_ROWS.append(f"EXTRACT_ERROR | {url} | {type(e).__name__}: {e}")
         return None
 
 
+def extract_entries_from_streams_tab() -> list[dict]:
+    info = ydl_extract(CHANNEL_STREAMS_URL, flat=True)
+    if not info:
+        return []
+    return [entry for entry in info.get("entries", []) if entry]
+
+
+def extract_entries_from_search(target: dict, max_results: int = 5) -> list[dict]:
+    # ytsearch is intentionally used as a fallback because channel /streams can be incomplete
+    # or expose weak live metadata depending on YouTube changes.
+    query = f"{target['title']} {CHANNEL_HANDLE}"
+    info = ydl_extract(f"ytsearch{max_results}:{query}", flat=True)
+    if not info:
+        return []
+    return [entry for entry in info.get("entries", []) if entry]
+
+
+def detail_from_entry(entry: dict) -> dict | None:
+    url = get_video_url(entry)
+    if not url:
+        return None
+    return ydl_extract(url, flat=False)
+
+
+def channel_seems_correct(entry: dict) -> bool:
+    channel = " ".join(
+        str(entry.get(field) or "")
+        for field in ["channel", "uploader", "channel_url", "uploader_url"]
+    )
+
+    if CHANNEL_HANDLE.lower() in channel.lower():
+        return True
+
+    title = normalize_title(entry.get("title", ""))
+    return any(keyword.lower() in (channel + " " + title).lower() for keyword in CHANNEL_KEYWORDS)
+
+
+def collect_candidate_entries() -> list[dict]:
+    candidates: list[dict] = []
+
+    # 1) Main source: channel /streams tab.
+    stream_entries = extract_entries_from_streams_tab()
+    candidates.extend(stream_entries)
+    LAST_DEBUG_ROWS.append(f"STREAMS_TAB_ENTRIES | {len(stream_entries)}")
+
+    # 2) Fallback source: per-machine YouTube search.
+    # This is slower but more robust when /streams metadata does not expose current live videos.
+    for target in TARGET_STREAMS:
+        search_entries = extract_entries_from_search(target, max_results=5)
+        candidates.extend(search_entries)
+        LAST_DEBUG_ROWS.append(f"SEARCH_ENTRIES | {target['label']} | {len(search_entries)}")
+
+    # Deduplicate by video URL.
+    seen_urls = set()
+    unique_candidates = []
+
+    for entry in candidates:
+        url = get_video_url(entry)
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        unique_candidates.append(entry)
+
+    LAST_DEBUG_ROWS.append(f"UNIQUE_CANDIDATES | {len(unique_candidates)}")
+    return unique_candidates
+
+
 def fetch_gameplaza_live_status() -> list[dict]:
-    entries = extract_channel_stream_entries()
+    global LAST_DEBUG_ROWS
+    LAST_DEBUG_ROWS = []
 
     target_keys = {
-        target_key(target["title"]): target
+        machine_key(target["game"], target["number"]): target
         for target in TARGET_STREAMS
     }
 
     live_by_key: dict[str, dict] = {}
+    candidates = collect_candidate_entries()
 
-    for entry in entries:
-        if not entry:
-            continue
-
+    for entry in candidates:
         rough_title = normalize_title(entry.get("title", ""))
-        key = target_key(rough_title)
-
-        if key not in target_keys:
-            continue
-
+        rough_key = title_to_machine_key(rough_title)
         rough_url = get_video_url(entry)
-        if not rough_url:
+        rough_status = entry.get("live_status")
+        rough_is_live = entry.get("is_live")
+
+        LAST_DEBUG_ROWS.append(
+            f"CANDIDATE | key={rough_key} | flat_live_status={rough_status} | flat_is_live={rough_is_live} | title={rough_title[:90]}"
+        )
+
+        if rough_key not in target_keys:
             continue
 
-        detail = extract_video_detail(rough_url)
+        detail = detail_from_entry(entry)
         if not detail:
             continue
 
         detail_title = normalize_title(detail.get("title") or rough_title)
-        detail_key = target_key(detail_title)
+        detail_key = title_to_machine_key(detail_title)
+        detail_status = detail.get("live_status")
+        detail_is_live = detail.get("is_live")
+
+        LAST_DEBUG_ROWS.append(
+            f"DETAIL | key={detail_key} | live_status={detail_status} | is_live={detail_is_live} | title={detail_title[:90]}"
+        )
 
         if detail_key not in target_keys:
+            continue
+
+        if not channel_seems_correct(detail):
+            LAST_DEBUG_ROWS.append(f"SKIP_CHANNEL | title={detail_title[:90]}")
             continue
 
         if not is_live_entry(detail):
             continue
 
-        url = get_video_url(detail) or rough_url
-        thumbnail = get_thumbnail_url(detail) or get_thumbnail_url(entry)
-
         live_by_key[detail_key] = {
-            "url": url,
-            "thumbnail": thumbnail,
+            "url": get_video_url(detail) or rough_url,
+            "thumbnail": get_thumbnail_url(detail) or get_thumbnail_url(entry),
         }
 
     results = []
 
     for target in TARGET_STREAMS:
-        key = target_key(target["title"])
+        key = machine_key(target["game"], target["number"])
         live_item = live_by_key.get(key)
 
         results.append(
@@ -222,6 +286,9 @@ def fetch_gameplaza_live_status() -> list[dict]:
                 "thumbnail": live_item["thumbnail"] if live_item else None,
             }
         )
+
+    live_count = sum(1 for item in results if item["is_live"])
+    LAST_DEBUG_ROWS.append(f"FINAL_LIVE_COUNT | {live_count}/8")
 
     return results
 
@@ -255,10 +322,7 @@ def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
 
 
 def download_image(url: str) -> Image.Image:
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "Mozilla/5.0"},
-    )
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
 
     with urllib.request.urlopen(request, timeout=15) as response:
         data = response.read()
@@ -285,9 +349,7 @@ def draw_centered_multiline(
     for line, bbox in zip(lines, line_boxes):
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-
         x = x1 + ((x2 - x1) - text_width) // 2
-
         draw.text((x, y), line, font=font, fill=fill)
         y += text_height + line_spacing
 
@@ -297,7 +359,6 @@ def draw_live_label(tile: Image.Image, label: str):
     draw = ImageDraw.Draw(overlay)
 
     font = load_font(24, bold=True)
-
     padding_x = 12
     padding_y = 8
     margin = 14
@@ -314,18 +375,8 @@ def draw_live_label(tile: Image.Image, label: str):
     x1 = x2 - box_w
     y1 = y2 - box_h
 
-    draw.rounded_rectangle(
-        (x1, y1, x2, y2),
-        radius=8,
-        fill=(0, 0, 0, 180),
-    )
-
-    draw.text(
-        (x1 + padding_x, y1 + padding_y - 2),
-        label,
-        font=font,
-        fill=(255, 255, 255, 255),
-    )
+    draw.rounded_rectangle((x1, y1, x2, y2), radius=8, fill=(0, 0, 0, 180))
+    draw.text((x1 + padding_x, y1 + padding_y - 2), label, font=font, fill=(255, 255, 255, 255))
 
     tile_rgba = tile.convert("RGBA")
     tile_rgba.alpha_composite(overlay)
@@ -335,7 +386,6 @@ def draw_live_label(tile: Image.Image, label: str):
 def make_offline_tile(label: str, tile_w: int, tile_h: int) -> Image.Image:
     tile = Image.new("RGB", (tile_w, tile_h), (0, 0, 0))
     draw = ImageDraw.Draw(tile)
-
     font = load_font(36, bold=True)
 
     draw_centered_multiline(
@@ -364,7 +414,7 @@ def make_thumbnail_tile(item: dict, tile_w: int, tile_h: int) -> Image.Image:
             )
             return draw_live_label(tile, label)
         except Exception:
-            return make_offline_tile(f"{label}\n썸네일 오류", tile_w, tile_h)
+            return make_offline_tile(label, tile_w, tile_h)
 
     if item["is_live"]:
         tile = Image.new("RGB", (tile_w, tile_h), (20, 20, 20))
@@ -386,10 +436,8 @@ def make_thumbnail_tile(item: dict, tile_w: int, tile_h: int) -> Image.Image:
 def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     cols = 4
     rows = 2
-
     tile_w = 640
     tile_h = 360
-
     border = 4
     banner_h = 72
 
@@ -402,23 +450,18 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     for index, item in enumerate(items):
         row = index // cols
         col = index % cols
-
         x = border + col * (tile_w + border)
         y = border + row * (tile_h + border)
-
         tile = make_thumbnail_tile(item, tile_w, tile_h)
         canvas.paste(tile, (x, y))
 
     draw = ImageDraw.Draw(canvas)
-
     banner_y = grid_h
     draw.rectangle((0, banner_y, grid_w, total_h), fill=(0, 0, 0))
 
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
-
     left_text = f"{now}  @광주 게임플라자"
     right_text = "generated by @밀크봇"
-
     banner_font = load_font(26, bold=False)
 
     left_bbox = draw.textbbox((0, 0), left_text, font=banner_font)
@@ -429,7 +472,6 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     right_h = right_bbox[3] - right_bbox[1]
 
     margin_x = 22
-
     left_y = banner_y + (banner_h - left_h) // 2 - 2
     right_y = banner_y + (banner_h - right_h) // 2 - 2
 
@@ -439,12 +481,10 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     output = BytesIO()
     canvas.save(output, format="JPEG", quality=92, optimize=True)
     output.seek(0)
-
     return output
 
 
 intents = discord.Intents.default()
-
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
@@ -460,7 +500,30 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("pong")
 
 
-@tree.command(name="겜플라이브", description="밀크봇한테 게임플라자 츄마이 라이브 현황 확인시키기")
+@tree.command(name="겜플디버그", description="밀크봇한테 게임플라자 츄마이 라이브 체크 시키기")
+async def gameplaza_debug(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True, ephemeral=True)
+
+    try:
+        items = await asyncio.to_thread(fetch_gameplaza_live_status)
+    except Exception as e:
+        await interaction.followup.send(f"디버그 실패:\n```{type(e).__name__}: {e}```", ephemeral=True)
+        return
+
+    status_lines = [
+        f"{item['label']}: {'LIVE' if item['is_live'] else 'OFFLINE'} | {item['url'] or '-'}"
+        for item in items
+    ]
+
+    debug_text = "\n".join(status_lines + ["", "--- DEBUG ---"] + LAST_DEBUG_ROWS[-35:])
+
+    if len(debug_text) > 1900:
+        debug_text = debug_text[:1900] + "\n... truncated"
+
+    await interaction.followup.send(f"```text\n{debug_text}\n```", ephemeral=True)
+
+
+@tree.command(name="겜플라이브", description="게임플라자 마이마이/츄니즘 라이브 상태를 확인합니다.")
 async def gameplaza_live(interaction: discord.Interaction):
     await interaction.response.defer(thinking=True)
 
@@ -515,7 +578,7 @@ async def gameplaza_live(interaction: discord.Interaction):
 
     file = discord.File(fp=image_buffer, filename="gameplaza_live_grid.jpg")
     embed.set_image(url="attachment://gameplaza_live_grid.jpg")
-    embed.set_footer(text="YouTube /streams 목록 기준")
+    embed.set_footer(text="YouTube /streams + ytsearch fallback 기준")
 
     await interaction.followup.send(embed=embed, file=file)
 

@@ -7,12 +7,13 @@ ideas/TODOs
 
 - choose song by random \
   user can choose range of difficulty, randomly chooses ridiculus levels at small chance \
-  maybe use zutaku.dev (why make db when there is one publically)
+  maybe use zetaraku.dev (why make db when there is one publically)
 
 - song finder
   based on user's filter setting, find in which index the designated song locates \
   e.g.) Based on rating sorting, "Enchanted Love" MAS will be at 187/365 on variety folder \
   -> maybe extend to find the most optimal way to find song?
+  + make it possible to import json from zetaraku.dev
 
   thinking about using maishift for gathering user's exact score \
   sort only by general setting (date, etc) when maishift is not connected \
@@ -40,3 +41,5 @@ ideas/TODOs
   dm me when bot gets update
 
 - check performai international facebook account message
+
+-smth fun idk

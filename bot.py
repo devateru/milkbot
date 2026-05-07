@@ -61,7 +61,7 @@ if ENABLE_DEBUG_COMMAND:
 
 
 @tree.command(name="겜플라이브", description="밀크봇한테 겜플 츄마이 라이브 현황 확인시키기")
-@app_commands.rename(ignore_no_stream_warning="항상 결과 출력하기")
+@app_commands.rename(ignore_no_stream_warning="ignore_warning")
 @app_commands.describe(
     ignore_no_stream_warning="스트림이 감지되지 않아도 경고를 띄우지 않는 옵션; 기본값은 꺼짐입니다."
 )

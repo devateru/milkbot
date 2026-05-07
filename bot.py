@@ -37,6 +37,7 @@ TARGET_STREAMS = [
 KST = timezone(timedelta(hours=9))
 
 CACHE_SECONDS = 45
+ZERO_RESULT_CACHE_SECONDS = 10
 CACHE_TIME: datetime | None = None
 CACHE_ITEMS: list[dict] | None = None
 
@@ -230,7 +231,10 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
 
     if not force_refresh and CACHE_TIME is not None and CACHE_ITEMS is not None:
         age = (now - CACHE_TIME).total_seconds()
-        if age < CACHE_SECONDS:
+        cached_live_count = sum(1 for item in CACHE_ITEMS if item["is_live"])
+        cache_limit = CACHE_SECONDS if cached_live_count > 0 else ZERO_RESULT_CACHE_SECONDS
+
+        if age < cache_limit:
             RESPONSE_FOOTER_TEXT = CACHE_FOOTER_TEXT
             return CACHE_ITEMS
 
@@ -562,35 +566,35 @@ async def on_ready():
     print(f"Logged in as {client.user}")
 
 
-@tree.command(name="ping", description="밀크봇 부르기")
+@tree.command(name="ping", description="봇 상태를 확인합니다.")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("pong")
 
 
-# @tree.command(name="겜플디버그", description="게임플라자 /streams 빠른 조회 디버그 정보를 확인합니다.")
-# async def gameplaza_debug(interaction: discord.Interaction):
-#     await interaction.response.defer(thinking=True, ephemeral=True)
+@tree.command(name="겜플디버그", description="게임플라자 /streams 빠른 조회 디버그 정보를 확인합니다.")
+async def gameplaza_debug(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True, ephemeral=True)
 
-#     try:
-#         items = await asyncio.to_thread(fetch_gameplaza_live_status, True)
-#     except Exception as e:
-#         await interaction.followup.send(f"디버그 실패:\n```{type(e).__name__}: {e}```", ephemeral=True)
-#         return
+    try:
+        items = await asyncio.to_thread(fetch_gameplaza_live_status, True)
+    except Exception as e:
+        await interaction.followup.send(f"디버그 실패:\n```{type(e).__name__}: {e}```", ephemeral=True)
+        return
 
-#     status_lines = [
-#         f"{item['label']}: {'LIVE' if item['is_live'] else 'OFFLINE'} | {item['url'] or '-'}"
-#         for item in items
-#     ]
+    status_lines = [
+        f"{item['label']}: {'LIVE' if item['is_live'] else 'OFFLINE'} | {item['url'] or '-'}"
+        for item in items
+    ]
 
-#     debug_text = "\n".join(status_lines + ["", "--- RAW ENTRIES ---"] + LAST_DEBUG_ROWS[-35:])
+    debug_text = "\n".join(status_lines + ["", "--- RAW ENTRIES ---"] + LAST_DEBUG_ROWS[-35:])
 
-#     if len(debug_text) > 1900:
-#         debug_text = debug_text[:1900] + "\n... truncated"
+    if len(debug_text) > 1900:
+        debug_text = debug_text[:1900] + "\n... truncated"
 
-#     await interaction.followup.send(f"```text\n{debug_text}\n```", ephemeral=True)
+    await interaction.followup.send(f"```text\n{debug_text}\n```", ephemeral=True)
 
 
-@tree.command(name="겜플라이브", description="밀크봇한테 겜플 츄마이 라이브 현황 확인시키기")
+@tree.command(name="겜플라이브", description="게임플라자 마이마이/츄니즘 라이브 상태를 확인합니다.")
 async def gameplaza_live(interaction: discord.Interaction):
     await interaction.response.defer(thinking=True)
 
@@ -626,7 +630,7 @@ async def gameplaza_live(interaction: discord.Interaction):
         if item["is_live"] and item["url"]:
             return f"[{machine_name}]({item['url']})"
 
-        return "----"
+        return "[----]"
 
     maimai_items = [item for item in items if item["group"] == "마이마이 디럭스"]
     chunithm_items = [item for item in items if item["group"] == "츄니즘"]

@@ -13,14 +13,62 @@ from yt_dlp import YoutubeDL
 CHANNEL_STREAMS_URL = "https://www.youtube.com/@GAMEPLAZA_C/streams"
 
 TARGET_STREAMS = [
-    {"game": "maimai", "number": "1", "label": "마이마이 1번기", "group": "마이마이 디럭스"},
-    {"game": "maimai", "number": "2", "label": "마이마이 2번기", "group": "마이마이 디럭스"},
-    {"game": "maimai", "number": "3", "label": "마이마이 3번기", "group": "마이마이 디럭스"},
-    {"game": "maimai", "number": "4", "label": "마이마이 4번기", "group": "마이마이 디럭스"},
-    {"game": "maimai", "number": "5", "label": "마이마이 5번기", "group": "마이마이 디럭스"},
-    {"game": "chunithm", "number": "1", "label": "츄니즘 1번기", "group": "츄니즘"},
-    {"game": "chunithm", "number": "2", "label": "츄니즘 2번기", "group": "츄니즘"},
-    {"game": "chunithm", "number": "3", "label": "츄니즘 3번기", "group": "츄니즘"},
+    {
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (1번기) LIVE",
+        "game": "maimai",
+        "number": "1",
+        "label": "마이마이 1번기",
+        "group": "마이마이 디럭스",
+    },
+    {
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (2번기) LIVE",
+        "game": "maimai",
+        "number": "2",
+        "label": "마이마이 2번기",
+        "group": "마이마이 디럭스",
+    },
+    {
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (3번기) LIVE",
+        "game": "maimai",
+        "number": "3",
+        "label": "마이마이 3번기",
+        "group": "마이마이 디럭스",
+    },
+    {
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (4번기) LIVE",
+        "game": "maimai",
+        "number": "4",
+        "label": "마이마이 4번기",
+        "group": "마이마이 디럭스",
+    },
+    {
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (5번기) LIVE",
+        "game": "maimai",
+        "number": "5",
+        "label": "마이마이 5번기",
+        "group": "마이마이 디럭스",
+    },
+    {
+        "title": "광주 게임플라자 츄니즘 CHUNITHM (1번기) LIVE",
+        "game": "chunithm",
+        "number": "1",
+        "label": "츄니즘 1번기",
+        "group": "츄니즘",
+    },
+    {
+        "title": "광주 게임플라자 츄니즘 CHUNITHM (2번기) LIVE",
+        "game": "chunithm",
+        "number": "2",
+        "label": "츄니즘 2번기",
+        "group": "츄니즘",
+    },
+    {
+        "title": "광주 게임플라자 츄니즘 CHUNITHM (3번기) LIVE",
+        "game": "chunithm",
+        "number": "3",
+        "label": "츄니즘 3번기",
+        "group": "츄니즘",
+    },
 ]
 
 KST = timezone(timedelta(hours=9))
@@ -49,7 +97,7 @@ DETAIL_CHECK_WHEN_FLAT_UNKNOWN = True
 DETAIL_WORKERS = 4
 DETAIL_TOTAL_TIMEOUT = 12
 DETAIL_SOCKET_TIMEOUT = 6
-MAX_DETAIL_CANDIDATES_PER_MACHINE = 2
+MAX_DETAIL_CANDIDATES_PER_MACHINE = 4
 
 
 
@@ -64,16 +112,24 @@ def machine_key(game: str, number: str) -> str:
 
 
 def title_to_machine_key(title: str) -> str | None:
-    title_norm = normalize_title(title).lower()
+    title_norm = normalize_title(title)
 
-    if "maimai" in title_norm or "마이마이" in title_norm:
+    # 제목이 고정되어 있으므로 exact normalized title을 우선 사용합니다.
+    for target in TARGET_STREAMS:
+        if title_norm == normalize_title(target["title"]):
+            return machine_key(target["game"], target["number"])
+
+    # 예외적으로 공백/괄호 표기가 조금 달라졌을 때만 한국어 번호 패턴으로 보조 매칭합니다.
+    title_lower = title_norm.lower()
+
+    if "maimai" in title_lower or "마이마이" in title_lower:
         game = "maimai"
-    elif "chunithm" in title_norm or "츄니즘" in title_norm:
+    elif "chunithm" in title_lower or "츄니즘" in title_lower:
         game = "chunithm"
     else:
         return None
 
-    match = re.search(r"(\d+)\s*(?:번기|번|호기)", title_norm)
+    match = re.search(r"(\d+)\s*(?:번기|번|호기)", title_lower)
     if not match:
         return None
 

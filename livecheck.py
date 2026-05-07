@@ -446,6 +446,7 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
         CACHE_NO_STREAM_WARNING_NEEDED = False
         RESPONSE_FOOTER_TEXT = None
         NO_STREAM_WARNING_NEEDED = False
+        STREAM_EMPTY = False
         return results
 
     if LAST_GOOD_TIME is not None and LAST_GOOD_ITEMS is not None:

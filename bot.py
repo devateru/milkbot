@@ -39,7 +39,25 @@ KST = timezone(timedelta(hours=9))
 CACHE_SECONDS = 45
 CACHE_TIME: datetime | None = None
 CACHE_ITEMS: list[dict] | None = None
+
+# YouTube /streams flat 결과가 일시적으로 비어 있거나 live_status를 누락하는 경우가 있습니다.
+# 이때 직전 정상 라이브 결과를 일정 시간 유지해서, 재요청 시 목록이 갑자기 사라지는 현상을 막습니다.
+LAST_GOOD_MAX_SECONDS = 120
+LAST_GOOD_TIME: datetime | None = None
+LAST_GOOD_ITEMS: list[dict] | None = None
+
+CACHE_FOOTER_TEXT: str | None = None
+RESPONSE_FOOTER_TEXT: str | None = None
+
 LAST_DEBUG_ROWS: list[str] = []
+
+# 4 x 2 격자 기준 최종 이미지 크기:
+# tile_w=1280, tile_h=720이면 약 5160 x 1516px 수준의 고해상도 이미지가 생성됩니다.
+TILE_W = 1280
+TILE_H = 720
+BORDER = 6
+BANNER_H = 84
+JPEG_QUALITY = 96
 
 
 def normalize_title(text: str) -> str:
@@ -73,8 +91,28 @@ def title_to_machine_key(title: str) -> str | None:
     return machine_key(game, match.group(1))
 
 
-def get_video_url(entry: dict) -> str | None:
+def get_video_id(entry: dict) -> str | None:
     video_id = entry.get("id")
+    if video_id and re.fullmatch(r"[A-Za-z0-9_-]{11}", str(video_id)):
+        return str(video_id)
+
+    for field in ["url", "webpage_url"]:
+        url = entry.get(field)
+        if not url:
+            continue
+
+        match = re.search(r"(?:v=|youtu\.be/|shorts/|live/)([A-Za-z0-9_-]{11})", str(url))
+        if match:
+            return match.group(1)
+
+        if re.fullmatch(r"[A-Za-z0-9_-]{11}", str(url)):
+            return str(url)
+
+    return None
+
+
+def get_video_url(entry: dict) -> str | None:
+    video_id = get_video_id(entry)
     if video_id:
         return f"https://www.youtube.com/watch?v={video_id}"
 
@@ -91,29 +129,49 @@ def get_video_url(entry: dict) -> str | None:
     return None
 
 
-def get_thumbnail_url(entry: dict) -> str | None:
-    thumbnails = entry.get("thumbnails") or []
+def get_thumbnail_urls(entry: dict) -> list[str]:
+    """
+    고해상도 썸네일 후보를 우선 시도합니다.
+    YouTube 라이브 썸네일은 maxresdefault가 없는 경우도 있으므로 여러 후보를 순서대로 둡니다.
+    """
+    urls: list[str] = []
+    video_id = get_video_id(entry)
 
+    if video_id:
+        urls.extend(
+            [
+                f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/sddefault.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
+            ]
+        )
+
+    thumbnails = entry.get("thumbnails") or []
     valid_thumbnails = [
         t for t in thumbnails
         if isinstance(t, dict) and t.get("url")
     ]
 
-    if valid_thumbnails:
-        best = max(
-            valid_thumbnails,
-            key=lambda t: (t.get("width") or 0) * (t.get("height") or 0),
-        )
-        return best["url"]
+    valid_thumbnails.sort(
+        key=lambda t: (t.get("width") or 0) * (t.get("height") or 0),
+        reverse=True,
+    )
+
+    urls.extend(t["url"] for t in valid_thumbnails)
 
     if entry.get("thumbnail"):
-        return entry["thumbnail"]
+        urls.append(entry["thumbnail"])
 
-    video_id = entry.get("id")
-    if video_id:
-        return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+    deduped: list[str] = []
+    seen = set()
 
-    return None
+    for url in urls:
+        if url and url not in seen:
+            deduped.append(url)
+            seen.add(url)
+
+    return deduped
 
 
 def is_live_entry(entry: dict) -> bool:
@@ -154,14 +212,17 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
     /streams flat 목록만 조회하고, 제목 exact match 대신 machine key로 매칭합니다.
     ytsearch 또는 영상별 상세 조회는 하지 않습니다.
     """
-    global CACHE_TIME, CACHE_ITEMS, LAST_DEBUG_ROWS
+    global CACHE_TIME, CACHE_ITEMS, LAST_DEBUG_ROWS, LAST_GOOD_TIME, LAST_GOOD_ITEMS, CACHE_FOOTER_TEXT, RESPONSE_FOOTER_TEXT
 
     now = datetime.now(KST)
 
     if not force_refresh and CACHE_TIME is not None and CACHE_ITEMS is not None:
         age = (now - CACHE_TIME).total_seconds()
         if age < CACHE_SECONDS:
+            RESPONSE_FOOTER_TEXT = CACHE_FOOTER_TEXT
             return CACHE_ITEMS
+
+    RESPONSE_FOOTER_TEXT = None
 
     entries = fetch_stream_entries()
 
@@ -198,7 +259,7 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
 
         live_by_key[key] = {
             "url": url,
-            "thumbnail": get_thumbnail_url(entry),
+            "thumbnail_urls": get_thumbnail_urls(entry),
         }
 
     results: list[dict] = []
@@ -213,16 +274,44 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
                 "group": target["group"],
                 "is_live": live_item is not None,
                 "url": live_item["url"] if live_item else None,
-                "thumbnail": live_item["thumbnail"] if live_item else None,
+                "thumbnail_urls": live_item["thumbnail_urls"] if live_item else [],
             }
         )
 
     live_count = sum(1 for item in results if item["is_live"])
     debug_rows.append(f"FINAL_LIVE_COUNT | {live_count}/8")
 
+    if live_count > 0:
+        LAST_GOOD_TIME = now
+        LAST_GOOD_ITEMS = results
+        LAST_DEBUG_ROWS = debug_rows
+        CACHE_TIME = now
+        CACHE_ITEMS = results
+        CACHE_FOOTER_TEXT = None
+        RESPONSE_FOOTER_TEXT = None
+        return results
+
+    if LAST_GOOD_TIME is not None and LAST_GOOD_ITEMS is not None:
+        good_age = (now - LAST_GOOD_TIME).total_seconds()
+        if good_age < LAST_GOOD_MAX_SECONDS:
+            fallback_minutes = max(1, int(round(good_age / 60)))
+            footer_text = f"*서버 이슈로 {fallback_minutes}분 전 기록을 대신 출력합니다."
+
+            debug_rows.append(
+                f"ZERO_LIVE_RESULT_IGNORED | keeping last good result from {int(good_age)}s ago"
+            )
+            LAST_DEBUG_ROWS = debug_rows
+            CACHE_TIME = now
+            CACHE_ITEMS = LAST_GOOD_ITEMS
+            CACHE_FOOTER_TEXT = footer_text
+            RESPONSE_FOOTER_TEXT = footer_text
+            return LAST_GOOD_ITEMS
+
     LAST_DEBUG_ROWS = debug_rows
     CACHE_TIME = now
     CACHE_ITEMS = results
+    CACHE_FOOTER_TEXT = None
+    RESPONSE_FOOTER_TEXT = None
 
     return results
 
@@ -264,6 +353,16 @@ def download_image(url: str) -> Image.Image:
     return Image.open(BytesIO(data)).convert("RGB")
 
 
+def download_first_available_image(urls: list[str]) -> Image.Image | None:
+    for url in urls:
+        try:
+            return download_image(url)
+        except Exception:
+            continue
+
+    return None
+
+
 def draw_centered_multiline(
     draw: ImageDraw.ImageDraw,
     box: tuple[int, int, int, int],
@@ -292,10 +391,10 @@ def draw_live_label(tile: Image.Image, label: str) -> Image.Image:
     overlay = Image.new("RGBA", tile.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
 
-    font = load_font(24, bold=True)
-    padding_x = 12
-    padding_y = 8
-    margin = 14
+    font = load_font(38, bold=True)
+    padding_x = 18
+    padding_y = 12
+    margin = 22
 
     text_bbox = draw.textbbox((0, 0), label, font=font)
     text_w = text_bbox[2] - text_bbox[0]
@@ -309,8 +408,8 @@ def draw_live_label(tile: Image.Image, label: str) -> Image.Image:
     x1 = x2 - box_w
     y1 = y2 - box_h
 
-    draw.rounded_rectangle((x1, y1, x2, y2), radius=8, fill=(0, 0, 0, 180))
-    draw.text((x1 + padding_x, y1 + padding_y - 2), label, font=font, fill=(255, 255, 255, 255))
+    draw.rounded_rectangle((x1, y1, x2, y2), radius=12, fill=(0, 0, 0, 180))
+    draw.text((x1 + padding_x, y1 + padding_y - 3), label, font=font, fill=(255, 255, 255, 255))
 
     tile_rgba = tile.convert("RGBA")
     tile_rgba.alpha_composite(overlay)
@@ -320,7 +419,7 @@ def draw_live_label(tile: Image.Image, label: str) -> Image.Image:
 def make_offline_tile(label: str, tile_w: int, tile_h: int) -> Image.Image:
     tile = Image.new("RGB", (tile_w, tile_h), (0, 0, 0))
     draw = ImageDraw.Draw(tile)
-    font = load_font(36, bold=True)
+    font = load_font(58, bold=True)
 
     draw_centered_multiline(
         draw=draw,
@@ -328,7 +427,7 @@ def make_offline_tile(label: str, tile_w: int, tile_h: int) -> Image.Image:
         lines=[label, "오프라인"],
         font=font,
         fill=(255, 255, 255),
-        line_spacing=14,
+        line_spacing=22,
     )
 
     return tile
@@ -337,9 +436,10 @@ def make_offline_tile(label: str, tile_w: int, tile_h: int) -> Image.Image:
 def make_thumbnail_tile(item: dict, tile_w: int, tile_h: int) -> Image.Image:
     label = item["label"]
 
-    if item["is_live"] and item["thumbnail"]:
-        try:
-            image = download_image(item["thumbnail"])
+    if item["is_live"]:
+        image = download_first_available_image(item.get("thumbnail_urls", []))
+
+        if image is not None:
             tile = ImageOps.fit(
                 image,
                 (tile_w, tile_h),
@@ -347,20 +447,17 @@ def make_thumbnail_tile(item: dict, tile_w: int, tile_h: int) -> Image.Image:
                 centering=(0.5, 0.5),
             )
             return draw_live_label(tile, label)
-        except Exception:
-            pass
 
-    if item["is_live"]:
         tile = Image.new("RGB", (tile_w, tile_h), (20, 20, 20))
         draw = ImageDraw.Draw(tile)
-        font = load_font(34, bold=True)
+        font = load_font(54, bold=True)
         draw_centered_multiline(
             draw=draw,
             box=(0, 0, tile_w, tile_h),
             lines=[label, "라이브", "썸네일 없음"],
             font=font,
             fill=(255, 255, 255),
-            line_spacing=10,
+            line_spacing=16,
         )
         return tile
 
@@ -371,11 +468,10 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     cols = 4
     rows = 2
 
-    tile_w = 640
-    tile_h = 360
-
-    border = 4
-    banner_h = 72
+    tile_w = TILE_W
+    tile_h = TILE_H
+    border = BORDER
+    banner_h = BANNER_H
 
     grid_w = cols * tile_w + (cols + 1) * border
     grid_h = rows * tile_h + (rows + 1) * border
@@ -400,7 +496,7 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     left_text = f"{now}  @광주 게임플라자"
     right_text = "generated by @밀크봇"
 
-    banner_font = load_font(26, bold=False)
+    banner_font = load_font(34, bold=False)
 
     left_bbox = draw.textbbox((0, 0), left_text, font=banner_font)
     right_bbox = draw.textbbox((0, 0), right_text, font=banner_font)
@@ -409,7 +505,7 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     right_w = right_bbox[2] - right_bbox[0]
     right_h = right_bbox[3] - right_bbox[1]
 
-    margin_x = 22
+    margin_x = 30
 
     left_y = banner_y + (banner_h - left_h) // 2 - 2
     right_y = banner_y + (banner_h - right_h) // 2 - 2
@@ -418,7 +514,7 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     draw.text((grid_w - margin_x - right_w, right_y), right_text, font=banner_font, fill=(255, 255, 255))
 
     output = BytesIO()
-    canvas.save(output, format="JPEG", quality=92, optimize=True)
+    canvas.save(output, format="JPEG", quality=JPEG_QUALITY, optimize=True, progressive=True)
     output.seek(0)
 
     return output
@@ -440,27 +536,27 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("pong")
 
 
-@tree.command(name="겜플라이브디버그", description="게임플라자 /streams 빠른 조회 디버그 정보를 확인합니다.")
-async def gameplaza_debug(interaction: discord.Interaction):
-    await interaction.response.defer(thinking=True, ephemeral=True)
+# @tree.command(name="겜플디버그", description="게임플라자 /streams 빠른 조회 디버그 정보를 확인합니다.")
+# async def gameplaza_debug(interaction: discord.Interaction):
+#     await interaction.response.defer(thinking=True, ephemeral=True)
 
-    try:
-        items = await asyncio.to_thread(fetch_gameplaza_live_status, True)
-    except Exception as e:
-        await interaction.followup.send(f"디버그 실패:\n```{type(e).__name__}: {e}```", ephemeral=True)
-        return
+#     try:
+#         items = await asyncio.to_thread(fetch_gameplaza_live_status, True)
+#     except Exception as e:
+#         await interaction.followup.send(f"디버그 실패:\n```{type(e).__name__}: {e}```", ephemeral=True)
+#         return
 
-    status_lines = [
-        f"{item['label']}: {'LIVE' if item['is_live'] else 'OFFLINE'} | {item['url'] or '-'}"
-        for item in items
-    ]
+#     status_lines = [
+#         f"{item['label']}: {'LIVE' if item['is_live'] else 'OFFLINE'} | {item['url'] or '-'}"
+#         for item in items
+#     ]
 
-    debug_text = "\n".join(status_lines + ["", "--- RAW ENTRIES ---"] + LAST_DEBUG_ROWS[-35:])
+#     debug_text = "\n".join(status_lines + ["", "--- RAW ENTRIES ---"] + LAST_DEBUG_ROWS[-35:])
 
-    if len(debug_text) > 1900:
-        debug_text = debug_text[:1900] + "\n... truncated"
+#     if len(debug_text) > 1900:
+#         debug_text = debug_text[:1900] + "\n... truncated"
 
-    await interaction.followup.send(f"```text\n{debug_text}\n```", ephemeral=True)
+#     await interaction.followup.send(f"```text\n{debug_text}\n```", ephemeral=True)
 
 
 @tree.command(name="겜플라이브", description="밀크봇한테 겜플 츄마이 라이브 현황 확인시키기")
@@ -518,7 +614,9 @@ async def gameplaza_live(interaction: discord.Interaction):
 
     file = discord.File(fp=image_buffer, filename="gameplaza_live_grid.jpg")
     embed.set_image(url="attachment://gameplaza_live_grid.jpg")
-    embed.set_footer(text="YouTube /streams 목록 기준")
+
+    if RESPONSE_FOOTER_TEXT:
+        embed.set_footer(text=RESPONSE_FOOTER_TEXT)
 
     await interaction.followup.send(embed=embed, file=file)
 

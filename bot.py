@@ -3,6 +3,7 @@ import os
 import re
 import unicodedata
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone, timedelta
 from io import BytesIO
 
@@ -59,6 +60,14 @@ TILE_H = 720
 BORDER = 6
 BANNER_H = 84
 JPEG_QUALITY = 96
+
+# /streams flat 조회에서 live_status/is_live가 None으로만 들어오는 경우가 있습니다.
+# 이때 ytsearch는 쓰지 않고, /streams에서 이미 잡힌 후보 영상만 상세 조회합니다.
+DETAIL_CHECK_WHEN_FLAT_UNKNOWN = True
+DETAIL_WORKERS = 4
+DETAIL_TOTAL_TIMEOUT = 12
+DETAIL_SOCKET_TIMEOUT = 6
+MAX_DETAIL_CANDIDATES_PER_MACHINE = 2
 
 
 def normalize_title(text: str) -> str:
@@ -219,11 +228,37 @@ def fetch_stream_entries() -> list[dict]:
     return info.get("entries", []) if info else []
 
 
+def extract_video_detail(video_url: str) -> dict | None:
+    """
+    /streams flat 결과에서 live_status/is_live가 누락될 때만 사용하는 보조 상세 조회입니다.
+    ytsearch는 사용하지 않고, 이미 /streams에 나온 영상 URL만 확인합니다.
+    """
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "ignoreerrors": True,
+        "noplaylist": True,
+        "socket_timeout": DETAIL_SOCKET_TIMEOUT,
+        "retries": 0,
+        "extractor_retries": 0,
+    }
+
+    cookiefile = os.getenv("YOUTUBE_COOKIES_FILE")
+    if cookiefile:
+        ydl_opts["cookiefile"] = cookiefile
+
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(video_url, download=False)
+    except Exception:
+        return None
+
+
 def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
     """
-    빠른 버전입니다.
-    /streams flat 목록만 조회하고, 제목 exact match 대신 machine key로 매칭합니다.
-    ytsearch 또는 영상별 상세 조회는 하지 않습니다.
+    1차로 /streams flat 목록을 빠르게 조회합니다.
+    flat 결과에서 live_status/is_live가 None이면, ytsearch 없이 /streams에 나온 후보 영상만 병렬 상세 조회합니다.
     """
     global CACHE_TIME, CACHE_ITEMS, LAST_DEBUG_ROWS, LAST_GOOD_TIME, LAST_GOOD_ITEMS, CACHE_FOOTER_TEXT, RESPONSE_FOOTER_TEXT
 
@@ -248,6 +283,9 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
     }
 
     live_by_key: dict[str, dict] = {}
+    candidates_by_key: dict[str, list[dict]] = {key: [] for key in target_keys}
+    seen_candidate_urls: dict[str, set[str]] = {key: set() for key in target_keys}
+
     debug_rows: list[str] = [f"STREAMS_TAB_ENTRIES | {len(entries)}"]
 
     for entry in entries:
@@ -266,17 +304,77 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
         if key not in target_keys:
             continue
 
-        if not is_live_entry(entry):
-            continue
-
         url = get_video_url(entry)
         if not url:
             continue
 
-        live_by_key[key] = {
-            "url": url,
-            "thumbnail_urls": get_thumbnail_urls(entry),
+        if url not in seen_candidate_urls[key] and len(candidates_by_key[key]) < MAX_DETAIL_CANDIDATES_PER_MACHINE:
+            candidates_by_key[key].append(entry)
+            seen_candidate_urls[key].add(url)
+
+        if is_live_entry(entry):
+            live_by_key[key] = {
+                "url": url,
+                "thumbnail_urls": get_thumbnail_urls(entry),
+            }
+
+    needs_detail_check = (
+        DETAIL_CHECK_WHEN_FLAT_UNKNOWN
+        and any(candidates_by_key[key] for key in target_keys)
+        and len(live_by_key) < len([key for key in target_keys if candidates_by_key[key]])
+    )
+
+    if needs_detail_check:
+        jobs: list[tuple[str, str, dict]] = []
+
+        for key, candidates in candidates_by_key.items():
+            if key in live_by_key:
+                continue
+
+            for entry in candidates:
+                url = get_video_url(entry)
+                if url:
+                    jobs.append((key, url, entry))
+
+        debug_rows.append(f"DETAIL_CHECK_JOBS | {len(jobs)}")
+
+        executor = ThreadPoolExecutor(max_workers=DETAIL_WORKERS)
+        future_to_job = {
+            executor.submit(extract_video_detail, url): (key, url, entry)
+            for key, url, entry in jobs
         }
+
+        try:
+            for future in as_completed(future_to_job, timeout=DETAIL_TOTAL_TIMEOUT):
+                key, url, entry = future_to_job[future]
+                detail = future.result()
+
+                if not detail:
+                    debug_rows.append(f"DETAIL | key={key} | failed | url={url}")
+                    continue
+
+                detail_title = normalize_title(detail.get("title") or entry.get("title", ""))
+                detail_key = title_to_machine_key(detail_title) or key
+                detail_live_status = detail.get("live_status")
+                detail_is_live = detail.get("is_live")
+
+                debug_rows.append(
+                    f"DETAIL | key={detail_key} | live_status={detail_live_status} | is_live={detail_is_live} | title={detail_title[:80]}"
+                )
+
+                if detail_key not in target_keys:
+                    continue
+
+                if is_live_entry(detail):
+                    live_by_key[detail_key] = {
+                        "url": get_video_url(detail) or url,
+                        "thumbnail_urls": get_thumbnail_urls(detail) or get_thumbnail_urls(entry),
+                    }
+
+        except FuturesTimeoutError:
+            debug_rows.append(f"DETAIL_CHECK_TIMEOUT | {DETAIL_TOTAL_TIMEOUT}s")
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     results: list[dict] = []
 
@@ -566,35 +664,35 @@ async def on_ready():
     print(f"Logged in as {client.user}")
 
 
-@tree.command(name="ping", description="봇 상태를 확인합니다.")
+@tree.command(name="ping", description="밀크봇 부르기")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("pong")
 
 
-@tree.command(name="겜플디버그", description="게임플라자 /streams 빠른 조회 디버그 정보를 확인합니다.")
-async def gameplaza_debug(interaction: discord.Interaction):
-    await interaction.response.defer(thinking=True, ephemeral=True)
+# @tree.command(name="겜플디버그", description="게임플라자 /streams 빠른 조회 디버그 정보를 확인합니다.")
+# async def gameplaza_debug(interaction: discord.Interaction):
+#     await interaction.response.defer(thinking=True, ephemeral=True)
 
-    try:
-        items = await asyncio.to_thread(fetch_gameplaza_live_status, True)
-    except Exception as e:
-        await interaction.followup.send(f"디버그 실패:\n```{type(e).__name__}: {e}```", ephemeral=True)
-        return
+#     try:
+#         items = await asyncio.to_thread(fetch_gameplaza_live_status, True)
+#     except Exception as e:
+#         await interaction.followup.send(f"디버그 실패:\n```{type(e).__name__}: {e}```", ephemeral=True)
+#         return
 
-    status_lines = [
-        f"{item['label']}: {'LIVE' if item['is_live'] else 'OFFLINE'} | {item['url'] or '-'}"
-        for item in items
-    ]
+#     status_lines = [
+#         f"{item['label']}: {'LIVE' if item['is_live'] else 'OFFLINE'} | {item['url'] or '-'}"
+#         for item in items
+#     ]
 
-    debug_text = "\n".join(status_lines + ["", "--- RAW ENTRIES ---"] + LAST_DEBUG_ROWS[-35:])
+#     debug_text = "\n".join(status_lines + ["", "--- RAW ENTRIES ---"] + LAST_DEBUG_ROWS[-35:])
 
-    if len(debug_text) > 1900:
-        debug_text = debug_text[:1900] + "\n... truncated"
+#     if len(debug_text) > 1900:
+#         debug_text = debug_text[:1900] + "\n... truncated"
 
-    await interaction.followup.send(f"```text\n{debug_text}\n```", ephemeral=True)
+#     await interaction.followup.send(f"```text\n{debug_text}\n```", ephemeral=True)
 
 
-@tree.command(name="겜플라이브", description="게임플라자 마이마이/츄니즘 라이브 상태를 확인합니다.")
+@tree.command(name="겜플라이브", description="밀크봇한테 겜플 츄마이 라이브 현황 확인시키기")
 async def gameplaza_live(interaction: discord.Interaction):
     await interaction.response.defer(thinking=True)
 

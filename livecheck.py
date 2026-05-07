@@ -111,6 +111,7 @@ DETAIL_TOTAL_TIMEOUT = 12
 DETAIL_SOCKET_TIMEOUT = 6
 MAX_DETAIL_CANDIDATES_PER_MACHINE = 4
 
+global STREAM_EMPTY
 STREAM_EMPTY = False
 
 def normalize_title(text: str) -> str:
@@ -299,6 +300,7 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
     global LAST_GOOD_TIME, LAST_GOOD_ITEMS
     global CACHE_FOOTER_TEXT, RESPONSE_FOOTER_TEXT
     global CACHE_NO_STREAM_WARNING_NEEDED, NO_STREAM_WARNING_NEEDED
+    global STREAM_EMPTY
 
     now = datetime.now(KST)
 

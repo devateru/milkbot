@@ -2,11 +2,14 @@ import asyncio
 import os
 import re
 import unicodedata
+import urllib.request
 from datetime import datetime, timezone, timedelta
+from io import BytesIO
 
 import discord
 from discord import app_commands
 from dotenv import load_dotenv
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from yt_dlp import YoutubeDL
 
 
@@ -21,25 +24,44 @@ if not TOKEN:
 CHANNEL_STREAMS_URL = "https://www.youtube.com/@GAMEPLAZA_C/streams"
 
 TARGET_STREAMS = [
-    "광주 게임플라자 마이마이 디럭스 maimai DX (1번기) LIVE",
-    "광주 게임플라자 마이마이 디럭스 maimai DX (2번기) LIVE",
-    "광주 게임플라자 마이마이 디럭스 maimai DX (3번기) LIVE",
-    "광주 게임플라자 마이마이 디럭스 maimai DX (4번기) LIVE",
-    "광주 게임플라자 마이마이 디럭스 maimai DX (5번기) LIVE",
-    "광주 게임플라자 츄니즘 CHUNITHM (1번기) LIVE",
-    "광주 게임플라자 츄니즘 CHUNITHM (2번기) LIVE",
-    "광주 게임플라자 츄니즘 CHUNITHM (3번기) LIVE",
+    {
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (1번기) LIVE",
+        "label": "마이마이 1번기",
+    },
+    {
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (2번기) LIVE",
+        "label": "마이마이 2번기",
+    },
+    {
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (3번기) LIVE",
+        "label": "마이마이 3번기",
+    },
+    {
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (4번기) LIVE",
+        "label": "마이마이 4번기",
+    },
+    {
+        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (5번기) LIVE",
+        "label": "마이마이 5번기",
+    },
+    {
+        "title": "광주 게임플라자 츄니즘 CHUNITHM (1번기) LIVE",
+        "label": "츄니즘 1번기",
+    },
+    {
+        "title": "광주 게임플라자 츄니즘 CHUNITHM (2번기) LIVE",
+        "label": "츄니즘 2번기",
+    },
+    {
+        "title": "광주 게임플라자 츄니즘 CHUNITHM (3번기) LIVE",
+        "label": "츄니즘 3번기",
+    },
 ]
-
 
 KST = timezone(timedelta(hours=9))
 
 
 def normalize_title(text: str) -> str:
-    """
-    YouTube 제목 비교용 정규화 함수입니다.
-    공백 차이, 유니코드 정규화 차이 때문에 exact match가 실패하는 것을 줄입니다.
-    """
     text = unicodedata.normalize("NFKC", text or "")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
@@ -59,31 +81,42 @@ def get_video_url(entry: dict) -> str | None:
     return None
 
 
-def is_live_entry(entry: dict) -> bool:
-    """
-    yt-dlp가 주는 live_status / is_live 값을 기준으로 현재 라이브 여부를 판단합니다.
-    """
-    live_status = entry.get("live_status")
-    is_live = entry.get("is_live")
+def get_thumbnail_url(entry: dict) -> str | None:
+    thumbnails = entry.get("thumbnails") or []
 
-    if is_live is True:
+    valid_thumbnails = [
+        t for t in thumbnails
+        if isinstance(t, dict) and t.get("url")
+    ]
+
+    if valid_thumbnails:
+        best = max(
+            valid_thumbnails,
+            key=lambda t: (t.get("width") or 0) * (t.get("height") or 0),
+        )
+        return best["url"]
+
+    if entry.get("thumbnail"):
+        return entry["thumbnail"]
+
+    video_id = entry.get("id")
+    if video_id:
+        return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+
+    return None
+
+
+def is_live_entry(entry: dict) -> bool:
+    if entry.get("is_live") is True:
         return True
 
-    if live_status == "is_live":
+    if entry.get("live_status") == "is_live":
         return True
 
     return False
 
 
-def fetch_gameplaza_live_status() -> dict[str, str | None]:
-    """
-    GAMEPLAZA_C /streams 페이지에서 현재 라이브 중인 대상 방송 링크를 찾습니다.
-
-    return:
-        {
-            "방송 제목": "https://www.youtube.com/watch?v=..." 또는 None
-        }
-    """
+def fetch_gameplaza_live_status() -> list[dict]:
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
@@ -101,13 +134,14 @@ def fetch_gameplaza_live_status() -> dict[str, str | None]:
 
     entries = info.get("entries", []) if info else []
 
-    live_by_title: dict[str, str] = {}
+    live_by_title: dict[str, dict] = {}
 
     for entry in entries:
         if not entry:
             continue
 
         title = normalize_title(entry.get("title", ""))
+
         if not title:
             continue
 
@@ -115,18 +149,262 @@ def fetch_gameplaza_live_status() -> dict[str, str | None]:
             continue
 
         url = get_video_url(entry)
-        if not url:
-            continue
+        thumbnail = get_thumbnail_url(entry)
 
-        live_by_title[title] = url
+        if url:
+            live_by_title[title] = {
+                "url": url,
+                "thumbnail": thumbnail,
+            }
 
-    result: dict[str, str | None] = {}
+    results = []
 
     for target in TARGET_STREAMS:
-        normalized_target = normalize_title(target)
-        result[target] = live_by_title.get(normalized_target)
+        normalized_target = normalize_title(target["title"])
+        live_item = live_by_title.get(normalized_target)
 
-    return result
+        results.append(
+            {
+                "title": target["title"],
+                "label": target["label"],
+                "is_live": live_item is not None,
+                "url": live_item["url"] if live_item else None,
+                "thumbnail": live_item["thumbnail"] if live_item else None,
+            }
+        )
+
+    return results
+
+
+def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+    candidates = []
+
+    if bold:
+        candidates.extend(
+            [
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+            ]
+        )
+
+    candidates.extend(
+        [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+    )
+
+    for path in candidates:
+        if os.path.exists(path):
+            return ImageFont.truetype(path, size=size)
+
+    return ImageFont.load_default()
+
+
+def download_image(url: str) -> Image.Image:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+        },
+    )
+
+    with urllib.request.urlopen(request, timeout=15) as response:
+        data = response.read()
+
+    return Image.open(BytesIO(data)).convert("RGB")
+
+
+def draw_centered_multiline(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    lines: list[str],
+    font: ImageFont.FreeTypeFont,
+    fill: tuple[int, int, int],
+    line_spacing: int = 8,
+):
+    x1, y1, x2, y2 = box
+
+    line_boxes = [draw.textbbox((0, 0), line, font=font) for line in lines]
+    line_heights = [b[3] - b[1] for b in line_boxes]
+    total_height = sum(line_heights) + line_spacing * (len(lines) - 1)
+
+    y = y1 + ((y2 - y1) - total_height) // 2
+
+    for line, bbox in zip(lines, line_boxes):
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+
+        x = x1 + ((x2 - x1) - text_width) // 2
+
+        draw.text((x, y), line, font=font, fill=fill)
+        y += text_height + line_spacing
+
+
+def draw_live_label(tile: Image.Image, label: str):
+    overlay = Image.new("RGBA", tile.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    font = load_font(24, bold=True)
+
+    padding_x = 12
+    padding_y = 8
+    margin = 14
+
+    text_bbox = draw.textbbox((0, 0), label, font=font)
+    text_w = text_bbox[2] - text_bbox[0]
+    text_h = text_bbox[3] - text_bbox[1]
+
+    box_w = text_w + padding_x * 2
+    box_h = text_h + padding_y * 2
+
+    x2 = tile.width - margin
+    y2 = tile.height - margin
+    x1 = x2 - box_w
+    y1 = y2 - box_h
+
+    draw.rounded_rectangle(
+        (x1, y1, x2, y2),
+        radius=8,
+        fill=(0, 0, 0, 180),
+    )
+
+    draw.text(
+        (x1 + padding_x, y1 + padding_y - 2),
+        label,
+        font=font,
+        fill=(255, 255, 255, 255),
+    )
+
+    tile_rgba = tile.convert("RGBA")
+    tile_rgba.alpha_composite(overlay)
+    return tile_rgba.convert("RGB")
+
+
+def make_offline_tile(label: str, tile_w: int, tile_h: int) -> Image.Image:
+    tile = Image.new("RGB", (tile_w, tile_h), (0, 0, 0))
+    draw = ImageDraw.Draw(tile)
+
+    font = load_font(36, bold=True)
+
+    draw_centered_multiline(
+        draw=draw,
+        box=(0, 0, tile_w, tile_h),
+        lines=[label, "오프라인"],
+        font=font,
+        fill=(255, 255, 255),
+        line_spacing=14,
+    )
+
+    return tile
+
+
+def make_thumbnail_tile(item: dict, tile_w: int, tile_h: int) -> Image.Image:
+    label = item["label"]
+
+    if item["is_live"] and item["thumbnail"]:
+        try:
+            image = download_image(item["thumbnail"])
+            tile = ImageOps.fit(
+                image,
+                (tile_w, tile_h),
+                method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.5),
+            )
+            return draw_live_label(tile, label)
+        except Exception:
+            return make_offline_tile(f"{label}\n썸네일 오류", tile_w, tile_h)
+
+    if item["is_live"]:
+        tile = Image.new("RGB", (tile_w, tile_h), (20, 20, 20))
+        draw = ImageDraw.Draw(tile)
+        font = load_font(34, bold=True)
+        draw_centered_multiline(
+            draw=draw,
+            box=(0, 0, tile_w, tile_h),
+            lines=[label, "라이브", "썸네일 없음"],
+            font=font,
+            fill=(255, 255, 255),
+            line_spacing=10,
+        )
+        return tile
+
+    return make_offline_tile(label, tile_w, tile_h)
+
+
+def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
+    cols = 4
+    rows = 2
+
+    tile_w = 640
+    tile_h = 360
+
+    border = 4
+    banner_h = 72
+
+    grid_w = cols * tile_w + (cols + 1) * border
+    grid_h = rows * tile_h + (rows + 1) * border
+    total_h = grid_h + banner_h
+
+    canvas = Image.new("RGB", (grid_w, total_h), (0, 0, 0))
+
+    for index, item in enumerate(items):
+        row = index // cols
+        col = index % cols
+
+        x = border + col * (tile_w + border)
+        y = border + row * (tile_h + border)
+
+        tile = make_thumbnail_tile(item, tile_w, tile_h)
+        canvas.paste(tile, (x, y))
+
+    draw = ImageDraw.Draw(canvas)
+
+    banner_y = grid_h
+    draw.rectangle(
+        (0, banner_y, grid_w, total_h),
+        fill=(0, 0, 0),
+    )
+
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
+
+    left_text = f"{now}  @광주 게임플라자"
+    right_text = "generated by @밀크봇"
+
+    banner_font = load_font(26, bold=False)
+
+    left_bbox = draw.textbbox((0, 0), left_text, font=banner_font)
+    right_bbox = draw.textbbox((0, 0), right_text, font=banner_font)
+
+    left_h = left_bbox[3] - left_bbox[1]
+    right_w = right_bbox[2] - right_bbox[0]
+    right_h = right_bbox[3] - right_bbox[1]
+
+    margin_x = 22
+
+    left_y = banner_y + (banner_h - left_h) // 2 - 2
+    right_y = banner_y + (banner_h - right_h) // 2 - 2
+
+    draw.text(
+        (margin_x, left_y),
+        left_text,
+        font=banner_font,
+        fill=(255, 255, 255),
+    )
+
+    draw.text(
+        (grid_w - margin_x - right_w, right_y),
+        right_text,
+        font=banner_font,
+        fill=(255, 255, 255),
+    )
+
+    output = BytesIO()
+    canvas.save(output, format="JPEG", quality=92, optimize=True)
+    output.seek(0)
+
+    return output
 
 
 intents = discord.Intents.default()
@@ -141,21 +419,22 @@ async def on_ready():
     print(f"Logged in as {client.user}")
 
 
-@tree.command(name="ping", description="밀크봇 부르기")
+@tree.command(name="ping", description="봇 상태를 확인합니다.")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("pong")
 
 
-@tree.command(name="겜플라이브", description="밀크봇한테 츄마이 방송 현황 확인시키기")
+@tree.command(name="겜플라이브", description="게임플라자 마이마이/츄니즘 라이브 상태를 확인합니다.")
 async def gameplaza_live(interaction: discord.Interaction):
     await interaction.response.defer(thinking=True)
 
     try:
-        status = await asyncio.to_thread(fetch_gameplaza_live_status)
+        items = await asyncio.to_thread(fetch_gameplaza_live_status)
+        image_buffer = await asyncio.to_thread(make_gameplaza_grid_image, items)
     except Exception as e:
         embed = discord.Embed(
             title="게임플라자 라이브 상태 확인 실패",
-            description=f"유튜브 스트림 목록을 가져오는 중 오류가 발생했습니다.\n\n```{type(e).__name__}: {e}```",
+            description=f"처리 중 오류가 발생했습니다.\n\n```{type(e).__name__}: {e}```",
             color=discord.Color.red(),
         )
         await interaction.followup.send(embed=embed)
@@ -163,29 +442,58 @@ async def gameplaza_live(interaction: discord.Interaction):
 
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
 
+    live_count = sum(1 for item in items if item["is_live"])
+
     embed = discord.Embed(
         title="게임플라자 라이브 상태",
-        description=f"[채널 스트림 목록]({CHANNEL_STREAMS_URL})\n확인 시각: `{now}`",
+        description=(
+            f"[채널 스트림 목록]({CHANNEL_STREAMS_URL})\n"
+            f"확인 시각: `{now}`\n"
+            f"라이브: `{live_count}/8`"
+        ),
         color=discord.Color.blue(),
     )
 
-    for title, url in status.items():
-        short_name = title.replace("광주 게임플라자 ", "")
+    def format_machine_link(item: dict) -> str:
+        match = re.search(r"(\d+)번기", item["label"])
+        machine_name = f"{match.group(1)}번기" if match else item["label"]
 
-        if url:
-            value = f"[라이브 링크]({url})"
-        else:
-            value = "오프라인"
+        if item["is_live"] and item["url"]:
+            return f"[{machine_name}]({item['url']})"
 
-        embed.add_field(
-            name=short_name,
-            value=value,
-            inline=False,
-        )
+        return "[----]"
 
+    maimai_items = [
+        item for item in items
+        if item["label"].startswith("마이마이")
+    ]
+
+    chunithm_items = [
+        item for item in items
+        if item["label"].startswith("츄니즘")
+    ]
+
+    embed.add_field(
+        name="마이마이 디럭스",
+        value=" / ".join(format_machine_link(item) for item in maimai_items),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="츄니즘",
+        value=" / ".join(format_machine_link(item) for item in chunithm_items),
+        inline=False,
+    )
+
+    file = discord.File(
+        fp=image_buffer,
+        filename="gameplaza_live_grid.jpg",
+    )
+
+    embed.set_image(url="attachment://gameplaza_live_grid.jpg")
     embed.set_footer(text="YouTube /streams 목록 기준")
 
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send(embed=embed, file=file)
 
 
 client.run(TOKEN)

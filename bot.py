@@ -409,7 +409,7 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
         good_age = (now - LAST_GOOD_TIME).total_seconds()
         if good_age < LAST_GOOD_MAX_SECONDS:
             fallback_minutes = max(1, int(round(good_age / 60)))
-            footer_text = f"서버 이슈로 {fallback_minutes}분 전 기록을 대신 출력합니다."
+            footer_text = f"라이브가 조회되지 않아 {fallback_minutes}분 전 기록을 대신 출력합니다."
 
             debug_rows.append(
                 f"ZERO_LIVE_RESULT_IGNORED | keeping last good result from {int(good_age)}s ago"
@@ -714,7 +714,7 @@ async def gameplaza_live(interaction: discord.Interaction):
     embed = discord.Embed(
         title="게임플라자 라이브 상태",
         description=(
-            f"[채널 스트림 목록]({CHANNEL_STREAMS_URL})\n"
+            f"[@GAMEPLAZA_C/streams]({CHANNEL_STREAMS_URL})\n"
             f"확인 시각: `{now}`\n"
             f"라이브: `{live_count}/8`"
         ),

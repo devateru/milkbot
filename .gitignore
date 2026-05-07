@@ -1,0 +1,17 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.sqlite3
+*.db
+data/
+logs/
+debug/
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.key
+*.pem

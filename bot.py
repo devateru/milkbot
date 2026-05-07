@@ -20,15 +20,24 @@ if not TOKEN:
 
 ENABLE_DEBUG_COMMAND = False
 
+SEGA_MAINTENANCE_START_HOUR = 4
+SEGA_MAINTENANCE_END_HOUR = 7
+
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
 
+def is_sega_maintenance_time() -> bool:
+    now = datetime.now(livecheck.KST)
+    return SEGA_MAINTENANCE_START_HOUR <= now.hour < SEGA_MAINTENANCE_END_HOUR
+
+
 @client.event
 async def on_ready():
-    await tree.sync()
+    synced = await tree.sync()
     print(f"Logged in as {client.user}")
+    print(f"Synced commands: {[cmd.name for cmd in synced]}")
 
 
 @tree.command(name="ping", description="밀크봇 부르기")
@@ -44,7 +53,10 @@ if ENABLE_DEBUG_COMMAND:
         try:
             items = await asyncio.to_thread(livecheck.fetch_gameplaza_live_status, True)
         except Exception as e:
-            await interaction.followup.send(f"디버그 실패:\n```{type(e).__name__}: {e}```", ephemeral=True)
+            await interaction.followup.send(
+                f"디버그 실패:\n```{type(e).__name__}: {e}```",
+                ephemeral=True,
+            )
             return
 
         status_lines = [
@@ -52,7 +64,11 @@ if ENABLE_DEBUG_COMMAND:
             for item in items
         ]
 
-        debug_text = "\n".join(status_lines + ["", "--- RAW ENTRIES ---"] + livecheck.get_debug_rows(35))
+        debug_text = "\n".join(
+            status_lines
+            + ["", "--- RAW ENTRIES ---"]
+            + livecheck.get_debug_rows(35)
+        )
 
         if len(debug_text) > 1900:
             debug_text = debug_text[:1900] + "\n... truncated"
@@ -61,19 +77,33 @@ if ENABLE_DEBUG_COMMAND:
 
 
 @tree.command(name="겜플라이브", description="밀크봇한테 겜플 츄마이 라이브 현황 확인시키기")
-@app_commands.rename(ignore_no_stream_warning="ignore_warning")
 @app_commands.describe(
-    ignore_no_stream_warning="스트림이 감지되지 않아도 경고를 띄우지 않는 옵션; 기본값은 꺼짐입니다."
+    ignore_no_stream_notice="스트림이 감지되지 않아도 경고를 띄우지 않는 옵션; 기본값은 꺼짐 (False) 이에요."
 )
 async def gameplaza_live(
     interaction: discord.Interaction,
-    ignore_no_stream_warning: bool = False,
+    ignore_no_stream_notice: bool = False,
 ):
+    if is_sega_maintenance_time():
+        await interaction.response.send_message(
+            "SEGA 서버 점검 시간이에요;; 잠이나 자세요;;;;"
+        )
+        return
+
     await interaction.response.defer(thinking=True)
 
     try:
         items = await asyncio.to_thread(livecheck.fetch_gameplaza_live_status)
+
+        if livecheck.should_send_no_stream_warning() and not ignore_no_stream_notice:
+            await interaction.followup.send(
+                livecheck.get_no_stream_warning_text(),
+                ephemeral=True,
+            )
+            return
+
         image_buffer = await asyncio.to_thread(livecheck.make_gameplaza_grid_image, items)
+
     except Exception as e:
         embed = discord.Embed(
             title="게임플라자 라이브 상태 확인 실패",
@@ -128,12 +158,6 @@ async def gameplaza_live(
         embed.set_footer(text=footer_text)
 
     await interaction.followup.send(embed=embed, file=file)
-
-    if livecheck.should_send_no_stream_warning() and not ignore_no_stream_warning:
-        await interaction.followup.send(
-            livecheck.get_no_stream_warning_text(),
-            ephemeral=True,
-        )
 
 
 client.run(TOKEN)

@@ -12,6 +12,20 @@ from yt_dlp import YoutubeDL
 
 CHANNEL_STREAMS_URL = "https://www.youtube.com/@GAMEPLAZA_C/streams"
 
+# GAMEPLAZA에서 라이브가 0개로 감지될 때만 확인하는 control stream입니다.
+# 두 control stream 모두 live/cache 확인에 실패하면, 단순 오프라인이 아니라
+# YouTube live/cache 접근 문제로 판단합니다.
+CONTROL_STREAMS = [
+    {
+        "name": "Lofi Girl",
+        "url": "https://www.youtube.com/@LofiGirl/streams",
+    },
+    {
+        "name": "NASA",
+        "url": "https://www.youtube.com/@NASA/streams",
+    },
+]
+
 TARGET_STREAMS = [
     {
         "game": "maimai",
@@ -78,15 +92,11 @@ ZERO_RESULT_CACHE_SECONDS = 10
 CACHE_TIME: datetime | None = None
 CACHE_ITEMS: list[dict] | None = None
 CACHE_FOOTER_TEXT: str | None = None
-CACHE_NO_STREAM_WARNING_NEEDED = False
-
-LAST_GOOD_MAX_SECONDS = 120
-LAST_GOOD_TIME: datetime | None = None
-LAST_GOOD_ITEMS: list[dict] | None = None
+CACHE_ISSUE_DETECTED = False
 
 RESPONSE_FOOTER_TEXT: str | None = None
-NO_STREAM_WARNING_NEEDED = False
-NO_STREAM_WARNING_TEXT = "감지된 라이브가 없어요. 서버 오류인 것 같다면 잠시 뒤 다시 시도해주세요."
+CACHE_ISSUE_RESPONSE_NEEDED = False
+CACHE_ISSUE_TEXT = "YouTube 라이브 캐시를 받아오지 못했어요. 잠시 뒤 다시 시도해주세요."
 
 LAST_DEBUG_ROWS: list[str] = []
 
@@ -111,8 +121,9 @@ DETAIL_TOTAL_TIMEOUT = 12
 DETAIL_SOCKET_TIMEOUT = 6
 MAX_DETAIL_CANDIDATES_PER_MACHINE = 4
 
-global STREAM_EMPTY
-STREAM_EMPTY = False
+CONTROL_PLAYLIST_END = 10
+CONTROL_DETAIL_CANDIDATES = 3
+
 
 def normalize_title(text: str) -> str:
     text = unicodedata.normalize("NFKC", text or "")
@@ -179,13 +190,13 @@ def get_video_url(entry: dict) -> str | None:
 
     url = entry.get("url")
     if url:
-        if url.startswith("http"):
-            return url
+        if str(url).startswith("http"):
+            return str(url)
         return f"https://www.youtube.com/watch?v={url}"
 
     webpage_url = entry.get("webpage_url")
     if webpage_url:
-        return webpage_url
+        return str(webpage_url)
 
     return None
 
@@ -253,40 +264,45 @@ def is_live_entry(entry: dict) -> bool:
     return entry.get("is_live") is True or entry.get("live_status") == "is_live"
 
 
-def fetch_stream_entries() -> list[dict]:
+def build_ydl_opts(*, playlistend: int | None = None, socket_timeout: int = 8, extract_flat: bool = True) -> dict:
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
-        "extract_flat": "in_playlist",
         "ignoreerrors": True,
-        "playlistend": 50,
-        "socket_timeout": 8,
+        "socket_timeout": socket_timeout,
         "retries": 1,
         "extractor_retries": 1,
     }
 
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(CHANNEL_STREAMS_URL, download=False)
-
-    return info.get("entries", []) if info else []
-
-
-def extract_video_detail(video_url: str) -> dict | None:
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "ignoreerrors": True,
-        "noplaylist": True,
-        "socket_timeout": DETAIL_SOCKET_TIMEOUT,
-        "retries": 0,
-        "extractor_retries": 0,
-    }
+    if extract_flat:
+        ydl_opts["extract_flat"] = "in_playlist"
+        if playlistend is not None:
+            ydl_opts["playlistend"] = playlistend
+    else:
+        ydl_opts["noplaylist"] = True
+        ydl_opts["retries"] = 0
+        ydl_opts["extractor_retries"] = 0
 
     cookiefile = os.getenv("YOUTUBE_COOKIES_FILE")
     if cookiefile:
         ydl_opts["cookiefile"] = cookiefile
+
+    return ydl_opts
+
+
+def fetch_stream_entries(streams_url: str = CHANNEL_STREAMS_URL, playlistend: int = 50) -> list[dict]:
+    ydl_opts = build_ydl_opts(playlistend=playlistend, socket_timeout=8, extract_flat=True)
+
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(streams_url, download=False)
+
+    entries = info.get("entries", []) if info else []
+    return [entry for entry in entries if entry]
+
+
+def extract_video_detail(video_url: str) -> dict | None:
+    ydl_opts = build_ydl_opts(socket_timeout=DETAIL_SOCKET_TIMEOUT, extract_flat=False)
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
@@ -295,12 +311,64 @@ def extract_video_detail(video_url: str) -> dict | None:
         return None
 
 
+def check_control_stream(control: dict) -> bool:
+    """Return True if the control channel currently exposes at least one live stream."""
+    entries = fetch_stream_entries(control["url"], playlistend=CONTROL_PLAYLIST_END)
+
+    if any(is_live_entry(entry) for entry in entries):
+        return True
+
+    # Some YouTube flat extracts omit live_status. In that case, inspect a few candidates.
+    for entry in entries[:CONTROL_DETAIL_CANDIDATES]:
+        video_url = get_video_url(entry)
+        if not video_url:
+            continue
+
+        detail = extract_video_detail(video_url)
+        if detail and is_live_entry(detail):
+            return True
+
+    return False
+
+
+def check_control_streams(debug_rows: list[str]) -> bool:
+    control_results: list[bool] = []
+
+    for control in CONTROL_STREAMS:
+        try:
+            ok = check_control_stream(control)
+        except Exception as exc:
+            ok = False
+            debug_rows.append(
+                f"CONTROL_STREAM | {control['name']} | ok=False | error={type(exc).__name__}: {exc}"
+            )
+        else:
+            debug_rows.append(f"CONTROL_STREAM | {control['name']} | ok={ok}")
+
+        control_results.append(ok)
+
+    control_ok = any(control_results)
+    debug_rows.append(f"CONTROL_STREAM_RESULT | any_ok={control_ok}")
+    return control_ok
+
+
+def make_empty_results() -> list[dict]:
+    return [
+        {
+            "label": target["label"],
+            "group": target["group"],
+            "is_live": False,
+            "url": None,
+            "thumbnail_urls": [],
+        }
+        for target in TARGET_STREAMS
+    ]
+
+
 def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
     global CACHE_TIME, CACHE_ITEMS, LAST_DEBUG_ROWS
-    global LAST_GOOD_TIME, LAST_GOOD_ITEMS
     global CACHE_FOOTER_TEXT, RESPONSE_FOOTER_TEXT
-    global CACHE_NO_STREAM_WARNING_NEEDED, NO_STREAM_WARNING_NEEDED
-    global STREAM_EMPTY
+    global CACHE_ISSUE_DETECTED, CACHE_ISSUE_RESPONSE_NEEDED
 
     now = datetime.now(KST)
 
@@ -311,13 +379,20 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
 
         if age < cache_limit:
             RESPONSE_FOOTER_TEXT = CACHE_FOOTER_TEXT
-            NO_STREAM_WARNING_NEEDED = CACHE_NO_STREAM_WARNING_NEEDED
+            CACHE_ISSUE_RESPONSE_NEEDED = CACHE_ISSUE_DETECTED
             return CACHE_ITEMS
 
     RESPONSE_FOOTER_TEXT = None
-    NO_STREAM_WARNING_NEEDED = False
+    CACHE_ISSUE_RESPONSE_NEEDED = False
+    CACHE_ISSUE_DETECTED = False
 
-    entries = fetch_stream_entries()
+    debug_rows: list[str] = []
+
+    try:
+        entries = fetch_stream_entries(CHANNEL_STREAMS_URL, playlistend=50)
+    except Exception as exc:
+        entries = []
+        debug_rows.append(f"STREAMS_TAB_FETCH_ERROR | {type(exc).__name__}: {exc}")
 
     target_keys = {
         machine_key(target["game"], target["number"]): target
@@ -327,12 +402,9 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
     live_by_key: dict[str, dict] = {}
     candidates_by_key: dict[str, list[dict]] = {key: [] for key in target_keys}
     seen_candidate_urls: dict[str, set[str]] = {key: set() for key in target_keys}
-    debug_rows: list[str] = [f"STREAMS_TAB_ENTRIES | {len(entries)}"]
+    debug_rows.insert(0, f"STREAMS_TAB_ENTRIES | {len(entries)}")
 
     for entry in entries:
-        if not entry:
-            continue
-
         title = normalize_title(entry.get("title", ""))
         key = title_to_machine_key(title)
         live_status = entry.get("live_status")
@@ -436,46 +508,21 @@ def fetch_gameplaza_live_status(force_refresh: bool = False) -> list[dict]:
     live_count = sum(1 for item in results if item["is_live"])
     debug_rows.append(f"FINAL_LIVE_COUNT | {live_count}/8")
 
-    if live_count > 0:
-        LAST_GOOD_TIME = now
-        LAST_GOOD_ITEMS = results
-        LAST_DEBUG_ROWS = debug_rows
-        CACHE_TIME = now
-        CACHE_ITEMS = results
-        CACHE_FOOTER_TEXT = None
-        CACHE_NO_STREAM_WARNING_NEEDED = False
-        RESPONSE_FOOTER_TEXT = None
-        NO_STREAM_WARNING_NEEDED = False
-        STREAM_EMPTY = False
-        return results
+    if live_count == 0:
+        control_ok = check_control_streams(debug_rows)
 
-    if LAST_GOOD_TIME is not None and LAST_GOOD_ITEMS is not None:
-        good_age = (now - LAST_GOOD_TIME).total_seconds()
-        if good_age < LAST_GOOD_MAX_SECONDS:
-            fallback_minutes = max(1, int(round(good_age / 60)))
-            footer_text = f"*라이브가 감지되지 않아 잠깐 전의 기록을 대신 출력했어요."
-
-            STREAM_EMPTY = True
-
-            debug_rows.append(
-                f"ZERO_LIVE_RESULT_IGNORED | keeping last good result from {int(good_age)}s ago"
-            )
-            LAST_DEBUG_ROWS = debug_rows
-            CACHE_TIME = now
-            CACHE_ITEMS = LAST_GOOD_ITEMS
-            CACHE_FOOTER_TEXT = footer_text
-            CACHE_NO_STREAM_WARNING_NEEDED = False
-            RESPONSE_FOOTER_TEXT = footer_text
-            NO_STREAM_WARNING_NEEDED = False
-            return LAST_GOOD_ITEMS
+        if not control_ok:
+            CACHE_ISSUE_DETECTED = True
+            CACHE_ISSUE_RESPONSE_NEEDED = True
+            debug_rows.append("CACHE_ISSUE_DETECTED | both control streams failed")
+        else:
+            debug_rows.append("ZERO_LIVE_CONFIRMED | control stream available")
 
     LAST_DEBUG_ROWS = debug_rows
     CACHE_TIME = now
     CACHE_ITEMS = results
     CACHE_FOOTER_TEXT = None
-    CACHE_NO_STREAM_WARNING_NEEDED = True
     RESPONSE_FOOTER_TEXT = None
-    NO_STREAM_WARNING_NEEDED = True
 
     return results
 
@@ -671,10 +718,7 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     draw.rectangle((0, banner_y, grid_w, total_h), fill=(0, 0, 0))
 
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
-    if STREAM_EMPTY:
-        left_text = f"{now}*  @광주 게임플라자"
-    else:
-        left_text = f"{now}  @광주 게임플라자"
+    left_text = f"{now}  @광주 게임플라자"
     right_text = "generated by @밀크봇"
     banner_font = load_font(34, bold=False)
 
@@ -707,12 +751,22 @@ def get_response_footer_text() -> str | None:
     return RESPONSE_FOOTER_TEXT
 
 
+def should_report_cache_issue() -> bool:
+    return CACHE_ISSUE_RESPONSE_NEEDED
+
+
+def get_cache_issue_text() -> str:
+    return CACHE_ISSUE_TEXT
+
+
+# Backward-compatible aliases. bot.py no longer uses these, but keeping them avoids
+# breaking older local command code if it still imports the previous names.
 def should_send_no_stream_warning() -> bool:
-    return NO_STREAM_WARNING_NEEDED
+    return should_report_cache_issue()
 
 
 def get_no_stream_warning_text() -> str:
-    return NO_STREAM_WARNING_TEXT
+    return get_cache_issue_text()
 
 
 def get_debug_rows(limit: int | None = None) -> list[str]:

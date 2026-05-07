@@ -77,13 +77,7 @@ if ENABLE_DEBUG_COMMAND:
 
 
 @tree.command(name="겜플라이브", description="밀크봇한테 겜플 츄마이 라이브 현황 확인시키기")
-@app_commands.describe(
-    ignore_no_stream_notice="스트림이 감지되지 않아도 경고를 띄우지 않는 옵션; 기본값은 꺼짐 (False) 이에요."
-)
-async def gameplaza_live(
-    interaction: discord.Interaction,
-    ignore_no_stream_notice: bool = False,
-):
+async def gameplaza_live(interaction: discord.Interaction):
     if is_sega_maintenance_time():
         await interaction.response.send_message(
             "SEGA 서버 점검 시간이에요;; 잠이나 자세요;;;;"
@@ -95,10 +89,12 @@ async def gameplaza_live(
     try:
         items = await asyncio.to_thread(livecheck.fetch_gameplaza_live_status)
 
-        if livecheck.should_send_no_stream_warning() and not ignore_no_stream_notice:
+        if livecheck.should_report_cache_issue():
             await interaction.followup.send(
-                livecheck.get_no_stream_warning_text(),
-                ephemeral=True,
+                (
+                    "YouTube 라이브 캐시를 받아오지 못했어요. 잠시 뒤 다시 시도해주세요.\n\n"
+                    f"겜플 라이브 직접 확인하기: [@GAMEPLAZA_C/streams]({livecheck.CHANNEL_STREAMS_URL})"
+                )
             )
             return
 

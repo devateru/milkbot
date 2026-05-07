@@ -24,38 +24,14 @@ if not TOKEN:
 CHANNEL_STREAMS_URL = "https://www.youtube.com/@GAMEPLAZA_C/streams"
 
 TARGET_STREAMS = [
-    {
-        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (1번기) LIVE",
-        "label": "마이마이 1번기",
-    },
-    {
-        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (2번기) LIVE",
-        "label": "마이마이 2번기",
-    },
-    {
-        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (3번기) LIVE",
-        "label": "마이마이 3번기",
-    },
-    {
-        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (4번기) LIVE",
-        "label": "마이마이 4번기",
-    },
-    {
-        "title": "광주 게임플라자 마이마이 디럭스 maimai DX (5번기) LIVE",
-        "label": "마이마이 5번기",
-    },
-    {
-        "title": "광주 게임플라자 츄니즘 CHUNITHM (1번기) LIVE",
-        "label": "츄니즘 1번기",
-    },
-    {
-        "title": "광주 게임플라자 츄니즘 CHUNITHM (2번기) LIVE",
-        "label": "츄니즘 2번기",
-    },
-    {
-        "title": "광주 게임플라자 츄니즘 CHUNITHM (3번기) LIVE",
-        "label": "츄니즘 3번기",
-    },
+    {"title": "광주 게임플라자 마이마이 디럭스 maimai DX (1번기) LIVE", "label": "마이마이 1번기"},
+    {"title": "광주 게임플라자 마이마이 디럭스 maimai DX (2번기) LIVE", "label": "마이마이 2번기"},
+    {"title": "광주 게임플라자 마이마이 디럭스 maimai DX (3번기) LIVE", "label": "마이마이 3번기"},
+    {"title": "광주 게임플라자 마이마이 디럭스 maimai DX (4번기) LIVE", "label": "마이마이 4번기"},
+    {"title": "광주 게임플라자 마이마이 디럭스 maimai DX (5번기) LIVE", "label": "마이마이 5번기"},
+    {"title": "광주 게임플라자 츄니즘 CHUNITHM (1번기) LIVE", "label": "츄니즘 1번기"},
+    {"title": "광주 게임플라자 츄니즘 CHUNITHM (2번기) LIVE", "label": "츄니즘 2번기"},
+    {"title": "광주 게임플라자 츄니즘 CHUNITHM (3번기) LIVE", "label": "츄니즘 3번기"},
 ]
 
 KST = timezone(timedelta(hours=9))
@@ -77,6 +53,10 @@ def get_video_url(entry: dict) -> str | None:
         if url.startswith("http"):
             return url
         return f"https://www.youtube.com/watch?v={url}"
+
+    webpage_url = entry.get("webpage_url")
+    if webpage_url:
+        return webpage_url
 
     return None
 
@@ -107,61 +87,131 @@ def get_thumbnail_url(entry: dict) -> str | None:
 
 
 def is_live_entry(entry: dict) -> bool:
-    if entry.get("is_live") is True:
-        return True
+    live_status = entry.get("live_status")
 
-    if entry.get("live_status") == "is_live":
-        return True
+    return (
+        entry.get("is_live") is True
+        or live_status == "is_live"
+        or entry.get("was_live") is True and live_status == "is_live"
+    )
 
-    return False
+
+def target_key(title: str) -> str:
+    """
+    Exact title matching is fragile because YouTube/yt-dlp may expose titles
+    with minor spacing/case/symbol differences. This key focuses on cabinet type
+    and machine number instead.
+    """
+    title = normalize_title(title).lower()
+
+    if "maimai" in title or "마이마이" in title:
+        game = "maimai"
+    elif "chunithm" in title or "츄니즘" in title:
+        game = "chunithm"
+    else:
+        game = "unknown"
+
+    match = re.search(r"\(?\s*(\d+)\s*번기\s*\)?", title)
+    number = match.group(1) if match else "unknown"
+
+    return f"{game}:{number}"
 
 
-def fetch_gameplaza_live_status() -> list[dict]:
+def extract_channel_stream_entries() -> list[dict]:
+    """
+    First pass: quickly collect candidate videos from the /streams tab.
+    Flat extraction is fast but live_status can be missing, so do not trust it alone.
+    """
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
         "extract_flat": "in_playlist",
         "ignoreerrors": True,
-        "playlistend": 50,
+        "playlistend": 80,
         "socket_timeout": 20,
-        "retries": 1,
-        "extractor_retries": 1,
+        "retries": 2,
+        "extractor_retries": 2,
     }
 
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(CHANNEL_STREAMS_URL, download=False)
 
-    entries = info.get("entries", []) if info else []
+    return info.get("entries", []) if info else []
 
-    live_by_title: dict[str, dict] = {}
+
+def extract_video_detail(video_url: str) -> dict | None:
+    """
+    Second pass: fetch each candidate video's detailed metadata.
+    This is slower, but live_status/is_live is much more reliable here.
+    """
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "ignoreerrors": True,
+        "socket_timeout": 20,
+        "retries": 2,
+        "extractor_retries": 2,
+    }
+
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(video_url, download=False)
+    except Exception:
+        return None
+
+
+def fetch_gameplaza_live_status() -> list[dict]:
+    entries = extract_channel_stream_entries()
+
+    target_keys = {
+        target_key(target["title"]): target
+        for target in TARGET_STREAMS
+    }
+
+    live_by_key: dict[str, dict] = {}
 
     for entry in entries:
         if not entry:
             continue
 
-        title = normalize_title(entry.get("title", ""))
+        rough_title = normalize_title(entry.get("title", ""))
+        key = target_key(rough_title)
 
-        if not title:
+        if key not in target_keys:
             continue
 
-        if not is_live_entry(entry):
+        rough_url = get_video_url(entry)
+        if not rough_url:
             continue
 
-        url = get_video_url(entry)
-        thumbnail = get_thumbnail_url(entry)
+        detail = extract_video_detail(rough_url)
+        if not detail:
+            continue
 
-        if url:
-            live_by_title[title] = {
-                "url": url,
-                "thumbnail": thumbnail,
-            }
+        detail_title = normalize_title(detail.get("title") or rough_title)
+        detail_key = target_key(detail_title)
+
+        if detail_key not in target_keys:
+            continue
+
+        if not is_live_entry(detail):
+            continue
+
+        url = get_video_url(detail) or rough_url
+        thumbnail = get_thumbnail_url(detail) or get_thumbnail_url(entry)
+
+        live_by_key[detail_key] = {
+            "url": url,
+            "thumbnail": thumbnail,
+        }
 
     results = []
 
     for target in TARGET_STREAMS:
-        normalized_target = normalize_title(target["title"])
-        live_item = live_by_title.get(normalized_target)
+        key = target_key(target["title"])
+        live_item = live_by_key.get(key)
 
         results.append(
             {
@@ -184,6 +234,7 @@ def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
             [
                 "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
                 "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+                "C:/Windows/Fonts/malgunbd.ttf",
             ]
         )
 
@@ -192,6 +243,7 @@ def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
             "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "C:/Windows/Fonts/malgun.ttf",
         ]
     )
 
@@ -205,9 +257,7 @@ def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
 def download_image(url: str) -> Image.Image:
     request = urllib.request.Request(
         url,
-        headers={
-            "User-Agent": "Mozilla/5.0",
-        },
+        headers={"User-Agent": "Mozilla/5.0"},
     )
 
     with urllib.request.urlopen(request, timeout=15) as response:
@@ -362,10 +412,7 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     draw = ImageDraw.Draw(canvas)
 
     banner_y = grid_h
-    draw.rectangle(
-        (0, banner_y, grid_w, total_h),
-        fill=(0, 0, 0),
-    )
+    draw.rectangle((0, banner_y, grid_w, total_h), fill=(0, 0, 0))
 
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
 
@@ -386,19 +433,8 @@ def make_gameplaza_grid_image(items: list[dict]) -> BytesIO:
     left_y = banner_y + (banner_h - left_h) // 2 - 2
     right_y = banner_y + (banner_h - right_h) // 2 - 2
 
-    draw.text(
-        (margin_x, left_y),
-        left_text,
-        font=banner_font,
-        fill=(255, 255, 255),
-    )
-
-    draw.text(
-        (grid_w - margin_x - right_w, right_y),
-        right_text,
-        font=banner_font,
-        fill=(255, 255, 255),
-    )
+    draw.text((margin_x, left_y), left_text, font=banner_font, fill=(255, 255, 255))
+    draw.text((grid_w - margin_x - right_w, right_y), right_text, font=banner_font, fill=(255, 255, 255))
 
     output = BytesIO()
     canvas.save(output, format="JPEG", quality=92, optimize=True)
@@ -419,12 +455,12 @@ async def on_ready():
     print(f"Logged in as {client.user}")
 
 
-@tree.command(name="ping", description="봇 상태를 확인합니다.")
+@tree.command(name="ping", description="밀크봇 부르기")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("pong")
 
 
-@tree.command(name="겜플라이브", description="게임플라자 마이마이/츄니즘 라이브 상태를 확인합니다.")
+@tree.command(name="겜플라이브", description="밀크봇한테 게임플라자 츄마이 라이브 현황 확인시키기")
 async def gameplaza_live(interaction: discord.Interaction):
     await interaction.response.defer(thinking=True)
 
@@ -441,7 +477,6 @@ async def gameplaza_live(interaction: discord.Interaction):
         return
 
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
-
     live_count = sum(1 for item in items if item["is_live"])
 
     embed = discord.Embed(
@@ -463,15 +498,8 @@ async def gameplaza_live(interaction: discord.Interaction):
 
         return "[----]"
 
-    maimai_items = [
-        item for item in items
-        if item["label"].startswith("마이마이")
-    ]
-
-    chunithm_items = [
-        item for item in items
-        if item["label"].startswith("츄니즘")
-    ]
+    maimai_items = [item for item in items if item["label"].startswith("마이마이")]
+    chunithm_items = [item for item in items if item["label"].startswith("츄니즘")]
 
     embed.add_field(
         name="마이마이 디럭스",
@@ -485,11 +513,7 @@ async def gameplaza_live(interaction: discord.Interaction):
         inline=False,
     )
 
-    file = discord.File(
-        fp=image_buffer,
-        filename="gameplaza_live_grid.jpg",
-    )
-
+    file = discord.File(fp=image_buffer, filename="gameplaza_live_grid.jpg")
     embed.set_image(url="attachment://gameplaza_live_grid.jpg")
     embed.set_footer(text="YouTube /streams 목록 기준")
 

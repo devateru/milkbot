@@ -3,7 +3,7 @@ random personal discord bot
 
 ideas/TODOs
 
-- fix the offline checking logic
+- fix the gameplaza live checker thingy
 
 - choose song by random \
   user can choose range of difficulty, randomly chooses ridiculus levels at small chance \
@@ -27,6 +27,10 @@ ideas/TODOs
 - chiho calculator
   based on various conditions, calculate expected credit and time to finish each chiho \
   (or user can input current chiho + progressed km)
+
+- clip generator (w/ external program)
+  checks gameplay vid -> reports every play result recorded and timestamp
+  (make external program that can generate gameplay clip with result above)
 
 - dev debuging menu
   seperate every message visible to user as json file \

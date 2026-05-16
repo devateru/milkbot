@@ -31,7 +31,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.messages = True
 intents.dm_messages = True
-intents.members = True
 
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)

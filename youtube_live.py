@@ -39,6 +39,7 @@ class MachineStatus:
     label: str
     is_live: bool
     thumbnail_url: str | None
+    video_id: str | None
     live_url: str | None
     last_ended_at: datetime | None
 
@@ -309,6 +310,7 @@ def get_gameplaza_machine_statuses() -> list[MachineStatus]:
                 label=_machine_label(kind, number),
                 is_live=live_video is not None,
                 thumbnail_url=live_video.thumbnail_url if live_video else None,
+                video_id=live_video.video_id if live_video else None,
                 live_url=live_video.url if live_video else None,
                 last_ended_at=_video_ended_at(completed_video) if completed_video else None,
             )

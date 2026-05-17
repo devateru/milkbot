@@ -76,13 +76,13 @@ async def gameplaza_live(interaction: discord.Interaction):
         return
 
     checked_at = datetime.now(ZoneInfo("Asia/Seoul"))
-    timestamp = checked_at.strftime("%Y-%m-%d %H:%M")
+    timestamp = checked_at.strftime("%Y-%m-%d %H:%M:%S")
     thumbnail_board = await asyncio.to_thread(
         build_gameplaza_thumbnail_board,
         statuses,
         timestamp,
     )
-    file = discord.File(thumbnail_board, filename="gameplaza_live.png")
+    file = discord.File(thumbnail_board, filename="gameplaza_live.jpg")
     embed = build_gameplaza_live_embed(statuses, checked_at)
 
     await interaction.followup.send(embed=embed, file=file)
@@ -123,7 +123,7 @@ def build_gameplaza_live_embed(
         value=" / ".join(_format_status(status) for status in chunithm_statuses),
         inline=False,
     )
-    embed.set_image(url="attachment://gameplaza_live.png")
+    embed.set_image(url="attachment://gameplaza_live.jpg")
 
     return embed
 

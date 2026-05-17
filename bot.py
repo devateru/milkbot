@@ -1,5 +1,8 @@
 import asyncio
 import os
+from datetime import datetime
+from io import BytesIO
+from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
@@ -8,8 +11,13 @@ from dotenv import load_dotenv
 from dev_commands import handle_developer_dm_command
 from help_commands import build_server_help_embeds
 from messages import get_message
+from thumbnail_board import build_gameplaza_thumbnail_board
 from treat import handle_notreat, handle_user_dm_command
-from youtube_live import YouTubeLiveError, YouTubeLiveVideo, get_gameplaza_live_video
+from youtube_live import (
+    GameplazaLiveSlot,
+    YouTubeLiveError,
+    get_gameplaza_live_slots,
+)
 
 
 load_dotenv(".env")
@@ -61,52 +69,61 @@ async def gameplaza_live(interaction: discord.Interaction):
     await interaction.response.defer(thinking=True)
 
     try:
-        live_video = await asyncio.to_thread(get_gameplaza_live_video)
+        slots = await asyncio.to_thread(get_gameplaza_live_slots)
     except YouTubeLiveError:
         await interaction.followup.send(
             get_message("slash.gameplaza_error", url=GAMEPLAZA_YOUTUBE_URL)
         )
         return
 
-    if live_video is None:
+    live_count = sum(1 for slot in slots if slot.video is not None)
+    if live_count == 0:
         await interaction.followup.send(
             get_message("slash.gameplaza_offline", url=GAMEPLAZA_YOUTUBE_URL)
         )
         return
 
-    await interaction.followup.send(embed=build_gameplaza_live_embed(live_video))
+    thumbnail_board = await asyncio.to_thread(build_gameplaza_thumbnail_board, slots)
+    file = discord.File(thumbnail_board, filename="gameplaza_live.png")
+    embed = build_gameplaza_live_embed(slots)
+
+    await interaction.followup.send(embed=embed, file=file)
 
 
-def build_gameplaza_live_embed(live_video: YouTubeLiveVideo) -> discord.Embed:
-    description = live_video.description.strip()
-    if len(description) > 300:
-        description = f"{description[:297]}..."
+def _format_slot(slot: GameplazaLiveSlot) -> str:
+    machine_name = slot.label.rsplit(" ", maxsplit=1)[-1]
 
+    if slot.video is None:
+        return "[----]"
+
+    return f"[{machine_name}]({slot.video.url})"
+
+
+def build_gameplaza_live_embed(slots: list[GameplazaLiveSlot]) -> discord.Embed:
+    live_count = sum(1 for slot in slots if slot.video is not None)
+    checked_at = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S KST")
     embed = discord.Embed(
-        title=live_video.title,
-        url=live_video.url,
-        description=description or get_message("slash.gameplaza_live"),
+        title="게임플라자 라이브 상태",
+        description=(
+            f"[@GAMEPLAZA_C/streams]({GAMEPLAZA_YOUTUBE_URL})\n"
+            f"확인 시각: {checked_at}\n"
+            f"라이브: {live_count}/8"
+        ),
     )
-    embed.add_field(name="채널", value=live_video.channel_title, inline=True)
+    maimai_slots = slots[:5]
+    chunithm_slots = slots[5:]
 
-    if live_video.actual_start_time is not None:
-        started_at = int(live_video.actual_start_time.timestamp())
-        embed.add_field(name="시작", value=f"<t:{started_at}:R>", inline=True)
-
-    if live_video.concurrent_viewers is not None:
-        try:
-            viewers = f"{int(live_video.concurrent_viewers):,}명"
-        except ValueError:
-            viewers = f"{live_video.concurrent_viewers}명"
-
-        embed.add_field(
-            name="시청자",
-            value=viewers,
-            inline=True,
-        )
-
-    if live_video.thumbnail_url:
-        embed.set_image(url=live_video.thumbnail_url)
+    embed.add_field(
+        name="마이마이 디럭스",
+        value=" / ".join(_format_slot(slot) for slot in maimai_slots),
+        inline=False,
+    )
+    embed.add_field(
+        name="츄니즘",
+        value=" / ".join(_format_slot(slot) for slot in chunithm_slots),
+        inline=False,
+    )
+    embed.set_image(url="attachment://gameplaza_live.png")
 
     return embed
 

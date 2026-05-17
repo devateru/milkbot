@@ -23,6 +23,7 @@ class YouTubeLiveVideo:
     description: str
     thumbnail_url: str | None
     actual_start_time: datetime | None
+    actual_end_time: datetime | None
     concurrent_viewers: str | None
 
     @property
@@ -31,23 +32,33 @@ class YouTubeLiveVideo:
 
 
 @dataclass(frozen=True)
-class GameplazaLiveSlot:
+class MachineStatus:
     key: str
+    kind: str
+    number: int
     label: str
-    video: YouTubeLiveVideo | None
+    is_live: bool
+    thumbnail_url: str | None
+    live_url: str | None
+    last_ended_at: datetime | None
 
 
 _cached_channel_id: str | None = None
 
-GAMEPLAZA_LIVE_SLOTS = (
-    ("maimai_1", "마이마이 1번기"),
-    ("maimai_2", "마이마이 2번기"),
-    ("maimai_3", "마이마이 3번기"),
-    ("maimai_4", "마이마이 4번기"),
-    ("maimai_5", "마이마이 5번기"),
-    ("chunithm_1", "츄니즘 1번기"),
-    ("chunithm_2", "츄니즘 2번기"),
-    ("chunithm_3", "츄니즘 3번기"),
+DISPLAY_NAME = {
+    "maimai": "마이마이",
+    "chunithm": "츄니즘",
+}
+
+MACHINE_LAYOUT = (
+    ("maimai", 1),
+    ("maimai", 2),
+    ("maimai", 3),
+    ("maimai", 4),
+    ("maimai", 5),
+    ("chunithm", 1),
+    ("chunithm", 2),
+    ("chunithm", 3),
 )
 
 
@@ -133,6 +144,14 @@ def _parse_slot_key(title: str) -> str | None:
     return None
 
 
+def _machine_key(kind: str, number: int) -> str:
+    return f"{kind}_{number}"
+
+
+def _machine_label(kind: str, number: int) -> str:
+    return f"{DISPLAY_NAME[kind]} {number}번기"
+
+
 def _get_channel_id() -> str:
     global _cached_channel_id
 
@@ -182,19 +201,21 @@ def _build_live_video(video_id: str, video: dict[str, Any]) -> YouTubeLiveVideo:
         description=str(snippet.get("description", "")),
         thumbnail_url=_best_thumbnail(snippet),
         actual_start_time=_parse_datetime(live_details.get("actualStartTime")),
+        actual_end_time=_parse_datetime(live_details.get("actualEndTime")),
         concurrent_viewers=live_details.get("concurrentViewers"),
     )
 
 
-def get_gameplaza_live_videos(max_results: int = 8) -> list[YouTubeLiveVideo]:
+def _fetch_videos_by_event(event_type: str, max_results: int = 25) -> list[YouTubeLiveVideo]:
     channel_id = _get_channel_id()
     search_data = _request_youtube(
         "search",
         {
             "part": "snippet",
             "channelId": channel_id,
-            "eventType": "live",
+            "eventType": event_type,
             "maxResults": max_results,
+            "order": "date",
             "type": "video",
         },
     )
@@ -235,32 +256,55 @@ def get_gameplaza_live_videos(max_results: int = 8) -> list[YouTubeLiveVideo]:
     return live_videos
 
 
-def get_gameplaza_live_slots(max_results: int = 8) -> list[GameplazaLiveSlot]:
-    videos = get_gameplaza_live_videos(max_results=max_results)
+def get_gameplaza_live_videos(max_results: int = 25) -> list[YouTubeLiveVideo]:
+    return _fetch_videos_by_event("live", max_results=max_results)
+
+
+def get_gameplaza_completed_videos(max_results: int = 50) -> list[YouTubeLiveVideo]:
+    return _fetch_videos_by_event("completed", max_results=max_results)
+
+
+def get_gameplaza_machine_statuses() -> list[MachineStatus]:
+    live_videos = get_gameplaza_live_videos()
+    completed_videos = get_gameplaza_completed_videos()
     videos_by_slot: dict[str, YouTubeLiveVideo] = {}
-    unassigned_videos = []
+    completed_by_slot: dict[str, YouTubeLiveVideo] = {}
 
-    for video in videos:
+    for video in live_videos:
         slot_key = _parse_slot_key(video.title)
-        if slot_key in dict(GAMEPLAZA_LIVE_SLOTS):
+        if slot_key:
             videos_by_slot[slot_key] = video
-        else:
-            unassigned_videos.append(video)
 
-    for slot_key, _label in GAMEPLAZA_LIVE_SLOTS:
-        if not unassigned_videos:
-            break
-        if slot_key not in videos_by_slot:
-            videos_by_slot[slot_key] = unassigned_videos.pop(0)
+    for video in completed_videos:
+        slot_key = _parse_slot_key(video.title)
+        if slot_key and slot_key not in completed_by_slot:
+            completed_by_slot[slot_key] = video
 
-    return [
-        GameplazaLiveSlot(
-            key=slot_key,
-            label=label,
-            video=videos_by_slot.get(slot_key),
+    statuses = []
+
+    for kind, number in MACHINE_LAYOUT:
+        slot_key = _machine_key(kind, number)
+        live_video = videos_by_slot.get(slot_key)
+        completed_video = completed_by_slot.get(slot_key)
+
+        statuses.append(
+            MachineStatus(
+                key=slot_key,
+                kind=kind,
+                number=number,
+                label=_machine_label(kind, number),
+                is_live=live_video is not None,
+                thumbnail_url=live_video.thumbnail_url if live_video else None,
+                live_url=live_video.url if live_video else None,
+                last_ended_at=completed_video.actual_end_time if completed_video else None,
+            )
         )
-        for slot_key, label in GAMEPLAZA_LIVE_SLOTS
-    ]
+
+    return statuses
+
+
+def get_gameplaza_live_slots() -> list[MachineStatus]:
+    return get_gameplaza_machine_statuses()
 
 
 def get_gameplaza_live_video() -> YouTubeLiveVideo | None:

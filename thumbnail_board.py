@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from urllib.error import URLError
@@ -5,26 +6,46 @@ from urllib.request import urlopen
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from youtube_live import GameplazaLiveSlot
+from youtube_live import MachineStatus
 
 
-BOARD_COLUMNS = 4
-BOARD_ROWS = 2
-CELL_SIZE = (512, 288)
-BOARD_SIZE = (BOARD_COLUMNS * CELL_SIZE[0], BOARD_ROWS * CELL_SIZE[1])
+COLS = 4
+ROWS = 2
+TILE_W = 480
+TILE_H = 270
+GRID_W = TILE_W * COLS
+GRID_H = TILE_H * ROWS
+BANNER_H = 80
+IMG_W = GRID_W
+IMG_H = GRID_H + BANNER_H
+
+LABEL_PADDING_X = 14
+LABEL_PADDING_Y = 10
+LABEL_FONT_SIZE = 24
+LABEL_BOX_PADDING_X = 12
+LABEL_BOX_PADDING_Y = 6
+
+OFFLINE_FONT_SIZE = 34
+OFFLINE_LINE_SPACING = 10
+BANNER_PADDING_X = 24
+BANNER_FONT_SIZE = 28
+
+COLOR_BLACK = (0, 0, 0)
+COLOR_WHITE = (255, 255, 255)
+LIVE_LABEL_BG = (0, 0, 0, 170)
 
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     font_candidates = (
-        Path("C:/Windows/Fonts/malgunbd.ttf"),
-        Path("C:/Windows/Fonts/malgun.ttf"),
-        Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
         Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
         Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"),
-        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
-        Path("/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"),
+        Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc"),
         Path("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"),
-        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        Path("/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"),
+        Path("C:/Windows/Fonts/malgun.ttf"),
+        Path("C:/Windows/Fonts/malgunbd.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
     )
 
     for path in font_candidates:
@@ -43,15 +64,6 @@ def _text_size(
     return right - left, bottom - top
 
 
-def _fit_thumbnail(image: Image.Image) -> Image.Image:
-    return ImageOps.fit(
-        image.convert("RGB"),
-        CELL_SIZE,
-        method=Image.Resampling.LANCZOS,
-        centering=(0.5, 0.5),
-    )
-
-
 def _download_thumbnail(url: str) -> Image.Image | None:
     try:
         with urlopen(url, timeout=10) as response:
@@ -60,83 +72,136 @@ def _download_thumbnail(url: str) -> Image.Image | None:
         return None
 
 
-def _draw_text_with_shadow(
-    draw: ImageDraw.ImageDraw,
-    position: tuple[int, int],
-    text: str,
-    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-    anchor: str,
-) -> None:
-    x, y = position
-    draw.text((x + 2, y + 2), text, fill=(0, 0, 0), font=font, anchor=anchor)
-    draw.text(position, text, fill=(255, 255, 255), font=font, anchor=anchor)
-
-
-def _draw_offline_cell(
-    draw: ImageDraw.ImageDraw,
-    x: int,
-    y: int,
-    label: str,
-    label_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-    offline_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-) -> None:
-    draw.rectangle((x, y, x + CELL_SIZE[0], y + CELL_SIZE[1]), fill=(0, 0, 0))
-    center_x = x + CELL_SIZE[0] // 2
-    center_y = y + CELL_SIZE[1] // 2
-    _draw_text_with_shadow(draw, (center_x, center_y - 18), label, label_font, "mm")
-    _draw_text_with_shadow(draw, (center_x, center_y + 28), "오프라인", offline_font, "mm")
-
-
-def _draw_corner_label(
-    draw: ImageDraw.ImageDraw,
-    x: int,
-    y: int,
-    label: str,
-    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-) -> None:
-    text_width, text_height = _text_size(draw, label, font)
-    horizontal_padding = 18
-    vertical_padding = 8
-    box_width = min(CELL_SIZE[0], text_width + horizontal_padding * 2)
-    box_height = text_height + vertical_padding * 2
-    left = x + CELL_SIZE[0] - box_width
-    top = y + CELL_SIZE[1] - box_height
-
-    draw.rectangle(
-        (left, top, x + CELL_SIZE[0], y + CELL_SIZE[1]),
-        fill=(0, 0, 0),
-    )
-    _draw_text_with_shadow(
-        draw,
-        (x + CELL_SIZE[0] - horizontal_padding, top + box_height // 2),
-        label,
-        font,
-        "rm",
+def _fit_thumbnail(image: Image.Image) -> Image.Image:
+    return ImageOps.fit(
+        image.convert("RGB"),
+        (TILE_W, TILE_H),
+        method=Image.Resampling.LANCZOS,
+        centering=(0.5, 0.5),
     )
 
 
-def build_gameplaza_thumbnail_board(slots: list[GameplazaLiveSlot]) -> BytesIO:
-    board = Image.new("RGB", BOARD_SIZE, (0, 0, 0))
-    draw = ImageDraw.Draw(board)
-    label_font = _load_font(30)
-    offline_font = _load_font(28)
-    corner_font = _load_font(24)
+def _format_minutes_since(value: datetime | None, now: datetime) -> str | None:
+    if value is None:
+        return None
 
-    for index, slot in enumerate(slots[: BOARD_COLUMNS * BOARD_ROWS]):
-        x = (index % BOARD_COLUMNS) * CELL_SIZE[0]
-        y = (index // BOARD_COLUMNS) * CELL_SIZE[1]
+    minutes = max(0, int((now - value.astimezone(timezone.utc)).total_seconds() // 60))
+    if minutes < 60:
+        return f"{minutes}분 전 종료"
+
+    hours = minutes // 60
+    rest_minutes = minutes % 60
+    if hours < 24 and rest_minutes:
+        return f"{hours}시간 {rest_minutes}분 전 종료"
+    if hours < 24:
+        return f"{hours}시간 전 종료"
+
+    days = hours // 24
+    return f"{days}일 전 종료"
+
+
+def _draw_live_label(image: Image.Image, x0: int, y0: int, label: str) -> None:
+    overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    font = _load_font(LABEL_FONT_SIZE)
+    text_w, text_h = _text_size(draw, label, font)
+
+    box_x1 = x0 + TILE_W - LABEL_PADDING_X
+    box_y1 = y0 + TILE_H - LABEL_PADDING_Y
+    box_x0 = box_x1 - text_w - LABEL_BOX_PADDING_X * 2
+    box_y0 = box_y1 - text_h - LABEL_BOX_PADDING_Y * 2
+    text_x = box_x0 + LABEL_BOX_PADDING_X
+    text_y = box_y0 + LABEL_BOX_PADDING_Y
+
+    draw.rectangle((box_x0, box_y0, box_x1, box_y1), fill=LIVE_LABEL_BG)
+    draw.text((text_x, text_y), label, fill=COLOR_WHITE, font=font)
+    image.alpha_composite(overlay)
+
+
+def _draw_centered_lines(
+    draw: ImageDraw.ImageDraw,
+    x0: int,
+    y0: int,
+    lines: list[str],
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+) -> None:
+    line_sizes = [_text_size(draw, line, font) for line in lines]
+    total_h = sum(height for _width, height in line_sizes)
+    total_h += OFFLINE_LINE_SPACING * (len(lines) - 1)
+    y = y0 + (TILE_H - total_h) // 2
+
+    for line, (text_w, text_h) in zip(lines, line_sizes):
+        x = x0 + (TILE_W - text_w) // 2
+        draw.text((x, y), line, fill=COLOR_WHITE, font=font)
+        y += text_h + OFFLINE_LINE_SPACING
+
+
+def _draw_offline_tile(
+    draw: ImageDraw.ImageDraw,
+    x0: int,
+    y0: int,
+    status: MachineStatus,
+    now: datetime,
+) -> None:
+    draw.rectangle((x0, y0, x0 + TILE_W, y0 + TILE_H), fill=COLOR_BLACK)
+    font = _load_font(OFFLINE_FONT_SIZE)
+    lines = [status.label, "오프라인"]
+    minutes_since = _format_minutes_since(status.last_ended_at, now)
+
+    if minutes_since:
+        lines.append(minutes_since)
+
+    _draw_centered_lines(draw, x0, y0, lines, font)
+
+
+def _draw_banner(image: Image.Image, timestamp: str) -> None:
+    draw = ImageDraw.Draw(image)
+    font = _load_font(BANNER_FONT_SIZE)
+    left_text = f"{timestamp} @광주 게임플라자"
+    right_text = "generated by @밀크봇"
+    _left_w, left_h = _text_size(draw, left_text, font)
+    right_w, right_h = _text_size(draw, right_text, font)
+    left_y = GRID_H + (BANNER_H - left_h) // 2
+    right_y = GRID_H + (BANNER_H - right_h) // 2
+
+    draw.rectangle((0, GRID_H, IMG_W, IMG_H), fill=COLOR_BLACK)
+    draw.text((BANNER_PADDING_X, left_y), left_text, fill=COLOR_WHITE, font=font)
+    draw.text(
+        (IMG_W - BANNER_PADDING_X - right_w, right_y),
+        right_text,
+        fill=COLOR_WHITE,
+        font=font,
+    )
+
+
+def build_gameplaza_thumbnail_board(
+    statuses: list[MachineStatus],
+    timestamp: str,
+    now: datetime | None = None,
+) -> BytesIO:
+    now = now or datetime.now(timezone.utc)
+    image = Image.new("RGBA", (IMG_W, IMG_H), COLOR_BLACK + (255,))
+    draw = ImageDraw.Draw(image)
+
+    for index, status in enumerate(statuses[: COLS * ROWS]):
+        row = index // COLS
+        col = index % COLS
+        x0 = col * TILE_W
+        y0 = row * TILE_H
 
         thumbnail = None
-        if slot.video and slot.video.thumbnail_url:
-            thumbnail = _download_thumbnail(slot.video.thumbnail_url)
+        if status.is_live and status.thumbnail_url:
+            thumbnail = _download_thumbnail(status.thumbnail_url)
 
         if thumbnail:
-            board.paste(_fit_thumbnail(thumbnail), (x, y))
-            _draw_corner_label(draw, x, y, slot.label, corner_font)
+            image.paste(_fit_thumbnail(thumbnail).convert("RGBA"), (x0, y0))
+            _draw_live_label(image, x0, y0, status.label)
         else:
-            _draw_offline_cell(draw, x, y, slot.label, label_font, offline_font)
+            _draw_offline_tile(draw, x0, y0, status, now)
+
+    _draw_banner(image, timestamp)
 
     buffer = BytesIO()
-    board.save(buffer, format="PNG", optimize=True)
+    image.convert("RGB").save(buffer, format="PNG", optimize=True)
     buffer.seek(0)
     return buffer

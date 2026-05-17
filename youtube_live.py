@@ -264,6 +264,14 @@ def get_gameplaza_completed_videos(max_results: int = 50) -> list[YouTubeLiveVid
     return _fetch_videos_by_event("completed", max_results=max_results)
 
 
+def _video_ended_at(video: YouTubeLiveVideo) -> datetime | None:
+    return video.actual_end_time or video.actual_start_time
+
+
+def _video_ended_sort_key(video: YouTubeLiveVideo) -> datetime:
+    return _video_ended_at(video) or datetime.min.replace(tzinfo=timezone.utc)
+
+
 def get_gameplaza_machine_statuses() -> list[MachineStatus]:
     live_videos = get_gameplaza_live_videos()
     completed_videos = get_gameplaza_completed_videos()
@@ -277,7 +285,13 @@ def get_gameplaza_machine_statuses() -> list[MachineStatus]:
 
     for video in completed_videos:
         slot_key = _parse_slot_key(video.title)
-        if slot_key and slot_key not in completed_by_slot:
+        if not slot_key:
+            continue
+
+        current_video = completed_by_slot.get(slot_key)
+        if current_video is None or _video_ended_sort_key(video) > _video_ended_sort_key(
+            current_video
+        ):
             completed_by_slot[slot_key] = video
 
     statuses = []
@@ -296,7 +310,7 @@ def get_gameplaza_machine_statuses() -> list[MachineStatus]:
                 is_live=live_video is not None,
                 thumbnail_url=live_video.thumbnail_url if live_video else None,
                 live_url=live_video.url if live_video else None,
-                last_ended_at=completed_video.actual_end_time if completed_video else None,
+                last_ended_at=_video_ended_at(completed_video) if completed_video else None,
             )
         )
 

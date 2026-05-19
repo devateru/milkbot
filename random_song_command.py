@@ -8,6 +8,7 @@ from random_song import (
     CHUNITHM_GENRE_CHOICES,
     MAIMAI_GENRE_CHOICES,
     RandomSongError,
+    calculate_level_probabilities,
     choose_random_song_response,
 )
 from storage import (
@@ -325,6 +326,14 @@ def _compact_options(options: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _format_probability_percent(value: float) -> str:
+    percent = value * 100
+    if percent >= 10:
+        return f"{percent:.1f}".rstrip("0").rstrip(".")
+
+    return f"{percent:.2f}".rstrip("0").rstrip(".")
+
+
 def _merge_with_preset(
     game: str,
     uid: int,
@@ -347,6 +356,85 @@ def _merge_with_preset(
     }
 
     return merged, applied_preset
+
+
+async def _build_probability_table_embed(
+    uid: int,
+    *,
+    game: str,
+    title: str,
+    description: str,
+    genre_choices: list[app_commands.Choice[str]],
+    difficulty_choices: list[app_commands.Choice[str]],
+    type_choices: list[app_commands.Choice[str]],
+    version_choices: list[app_commands.Choice[str]],
+) -> discord.Embed:
+    options = _random_song_options(None, None, None, None, None, None, None)
+    merged_options, applied_preset = _merge_with_preset(game, uid, options)
+    probabilities = await calculate_level_probabilities(
+        game=game,
+        min_level=float(merged_options["min_level"]) if merged_options.get("min_level") is not None else None,
+        max_level=float(merged_options["max_level"]) if merged_options.get("max_level") is not None else None,
+        genre=str(merged_options["genre"]) if merged_options.get("genre") is not None else None,
+        difficulty=str(merged_options["difficulty"]) if merged_options.get("difficulty") is not None else None,
+        chart_type=str(merged_options["chart_type"]) if merged_options.get("chart_type") is not None else None,
+        version=str(merged_options["version"]) if merged_options.get("version") is not None else None,
+        partner_level=float(merged_options["partner_level"]) if merged_options.get("partner_level") is not None else None,
+    )
+    preset_summary = _preset_summary(
+        applied_preset,
+        genre_choices=genre_choices,
+        difficulty_choices=difficulty_choices,
+        type_choices=type_choices,
+        version_choices=version_choices,
+    )
+    if preset_summary:
+        description += f"\n프리셋: {preset_summary}"
+
+    embed = discord.Embed(
+        title=title,
+        description=description,
+        color=0xD78CFF,
+    )
+    rows = [
+        f"`{level:g}`  {_format_probability_percent(probability)}%"
+        for level, probability in sorted(probabilities.items())
+    ]
+
+    for index in range(0, len(rows), 20):
+        embed.add_field(
+            name="보면상수" if index == 0 else "보면상수 계속",
+            value="\n".join(rows[index:index + 20]),
+            inline=True,
+        )
+
+    return embed
+
+
+async def build_maimai_probability_table_embed(uid: int) -> discord.Embed:
+    return await _build_probability_table_embed(
+        uid,
+        game="maimai",
+        title="마이마이 확률표",
+        description="현재 마이선곡 프리셋 기준입니다.",
+        genre_choices=MAIMAI_GENRE_APP_CHOICES,
+        difficulty_choices=MAIMAI_DIFFICULTY_CHOICES,
+        type_choices=MAIMAI_TYPE_CHOICES,
+        version_choices=MAIMAI_VERSION_CHOICES,
+    )
+
+
+async def build_chunithm_probability_table_embed(uid: int) -> discord.Embed:
+    return await _build_probability_table_embed(
+        uid,
+        game="chunithm",
+        title="츄니즘 확률표",
+        description="현재 츄니선곡 프리셋 기준입니다.",
+        genre_choices=CHUNITHM_GENRE_APP_CHOICES,
+        difficulty_choices=CHUNITHM_DIFFICULTY_CHOICES,
+        type_choices=CHUNITHM_TYPE_CHOICES,
+        version_choices=CHUNITHM_VERSION_CHOICES,
+    )
 
 
 async def _send_random_song(

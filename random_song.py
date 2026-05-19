@@ -30,10 +30,13 @@ CHUNITHM_NEW_VERSIONS = {"X-VERSE-X"}
 
 LEVEL_SCALE_MAX = {
     "maimai": 15.0,
-    "chunithm": 15.5,
+    "chunithm": 15.7,
 }
 LEVEL_WEIGHT_X_MIN = 0.13
-MAIMAI_RIDICULOUS_LEVEL_MIN = 14.9
+RIDICULOUS_LEVEL_MIN = {
+    "maimai": 14.9,
+    "chunithm": 15.6,
+}
 RIDICULOUS_LEVEL_POOL_PROBABILITY = 0.01
 
 DIFFICULTY_COLORS = {
@@ -310,6 +313,16 @@ def selected_type_for_default() -> set[str]:
     return {"std"} if random.random() < 0.2 else {"dx"}
 
 
+def selected_type_for_default_with_probability(game: str) -> tuple[set[str], float]:
+    if game == "chunithm":
+        return {"std"}, 1.0
+
+    if random.random() < 0.2:
+        return {"std"}, 0.2
+
+    return {"dx"}, 0.8
+
+
 async def fetch_game_data(game: str) -> dict[str, Any]:
     data_source_url = DATA_SOURCES[game]
 
@@ -401,11 +414,12 @@ def _level_probabilities(
         for level, weight in weights_by_level.items()
     }
 
-    if game == "maimai":
+    ridiculous_level_min = RIDICULOUS_LEVEL_MIN.get(game)
+    if ridiculous_level_min is not None:
         ridiculous_levels = {
             level
             for level in probabilities
-            if level >= MAIMAI_RIDICULOUS_LEVEL_MIN
+            if level >= ridiculous_level_min
         }
         ridiculous_probability = sum(probabilities[level] for level in ridiculous_levels)
         other_probability_sum = 1 - ridiculous_probability
@@ -447,7 +461,24 @@ def _choose_uniform_level(levels: list[float]) -> tuple[float, float]:
     return selected_level, 1 / len(unique_levels)
 
 
-def pick_random_song(
+def _probabilities_for_levels(
+    levels: list[float],
+    *,
+    game: str,
+    min_level: float | None,
+    max_level: float | None,
+) -> dict[float, float]:
+    if max_level is not None:
+        unique_levels = sorted(set(levels))
+        if not unique_levels:
+            raise RandomSongError(get_message("random_song.error_no_matches"))
+        probability = 1 / len(unique_levels)
+        return {level: probability for level in unique_levels}
+
+    return _level_probabilities(levels, game=game, min_level=min_level)
+
+
+def _candidate_levels(
     data: dict[str, Any],
     *,
     game: str,
@@ -459,7 +490,7 @@ def pick_random_song(
     version_filter: set[str] | None,
     partner_min_level: float | None,
     partner_max_level: float | None,
-) -> SongPick:
+) -> dict[float, list[tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]]]:
     ignore_difficulty = bool(chart_types & {"utage", "we"})
     candidates_by_level: dict[float, list[tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]]] = {}
 
@@ -492,6 +523,37 @@ def pick_random_song(
 
             candidates_by_level.setdefault(level, []).append((song, sheet, partner_sheet))
 
+    if not candidates_by_level:
+        raise RandomSongError(get_message("random_song.error_no_matches"))
+
+    return candidates_by_level
+
+
+def pick_random_song(
+    data: dict[str, Any],
+    *,
+    game: str,
+    min_level: float | None,
+    max_level: float | None,
+    genre: str | None,
+    difficulties: set[str],
+    chart_types: set[str],
+    version_filter: set[str] | None,
+    partner_min_level: float | None,
+    partner_max_level: float | None,
+) -> SongPick:
+    candidates_by_level = _candidate_levels(
+        data,
+        game=game,
+        min_level=min_level,
+        max_level=max_level,
+        genre=genre,
+        difficulties=difficulties,
+        chart_types=chart_types,
+        version_filter=version_filter,
+        partner_min_level=partner_min_level,
+        partner_max_level=partner_max_level,
+    )
     if max_level is not None:
         selected_level, selected_probability = _choose_uniform_level(list(candidates_by_level))
     else:
@@ -512,6 +574,64 @@ def pick_random_song(
         max_level=max_level,
         selected_level_probability=selected_probability,
     )
+
+
+async def calculate_level_probabilities(
+    *,
+    game: str,
+    min_level: float | None,
+    max_level: float | None,
+    genre: str | None,
+    difficulty: str | None,
+    chart_type: str | None,
+    version: str | None,
+    partner_level: float | None,
+) -> dict[float, float]:
+    if game not in DATA_SOURCES:
+        raise RandomSongError(get_message("random_song.error_invalid_game"))
+
+    partner_min_level = partner_level - 0.5 if partner_level is not None else None
+    partner_max_level = partner_level + 1.0 if partner_level is not None else None
+    difficulties = parse_difficulties(difficulty, game)
+    data = await fetch_game_data(game)
+    version_filter = parse_version_filter(game, version, data)
+
+    if chart_type is None and game == "maimai":
+        chart_type_options = [({"std"}, 0.2), ({"dx"}, 0.8)]
+    else:
+        chart_type_options = [(parse_types(chart_type, game) or {"std"}, 1.0)]
+
+    combined_probabilities: dict[float, float] = {}
+    for chart_types, type_probability in chart_type_options:
+        candidates_by_level = _candidate_levels(
+            data,
+            game=game,
+            min_level=min_level,
+            max_level=max_level,
+            genre=genre,
+            difficulties=difficulties,
+            chart_types=chart_types,
+            version_filter=version_filter,
+            partner_min_level=partner_min_level,
+            partner_max_level=partner_max_level,
+        )
+        probabilities = _probabilities_for_levels(
+            list(candidates_by_level),
+            game=game,
+            min_level=min_level,
+            max_level=max_level,
+        )
+        for level, probability in probabilities.items():
+            combined_probabilities[level] = combined_probabilities.get(level, 0) + probability * type_probability
+
+    probability_sum = sum(combined_probabilities.values())
+    if probability_sum <= 0:
+        raise RandomSongError(get_message("random_song.error_no_matches"))
+
+    return {
+        level: probability / probability_sum
+        for level, probability in combined_probabilities.items()
+    }
 
 
 def _cover_url(pick: SongPick) -> str | None:
@@ -742,7 +862,12 @@ async def choose_random_song_pick(
     partner_max_level = partner_level + 1.0 if partner_level is not None else None
 
     difficulties = parse_difficulties(difficulty, game)
-    chart_types = parse_types(chart_type, game) or selected_type_for_default()
+    parsed_types = parse_types(chart_type, game)
+    if parsed_types is None:
+        chart_types, type_probability = selected_type_for_default_with_probability(game)
+    else:
+        chart_types = parsed_types
+        type_probability = 1.0
     data = await fetch_game_data(game)
     version_filter = parse_version_filter(game, version, data)
 
@@ -758,4 +883,31 @@ async def choose_random_song_pick(
         partner_min_level=partner_min_level,
         partner_max_level=partner_max_level,
     )
-    return pick
+    probabilities = await calculate_level_probabilities(
+        game=game,
+        min_level=min_level,
+        max_level=max_level,
+        genre=genre,
+        difficulty=difficulty,
+        chart_type=chart_type,
+        version=version,
+        partner_level=partner_level,
+    )
+    selected_level = _chart_level(pick.sheet)
+    selected_level_probability = (
+        probabilities.get(selected_level, pick.selected_level_probability)
+        if selected_level is not None
+        else pick.selected_level_probability
+    )
+
+    return SongPick(
+        game=pick.game,
+        song=pick.song,
+        sheet=pick.sheet,
+        partner_sheet=pick.partner_sheet,
+        data_source_url=pick.data_source_url,
+        update_time=pick.update_time,
+        requested_level=pick.requested_level,
+        max_level=pick.max_level,
+        selected_level_probability=selected_level_probability,
+    )

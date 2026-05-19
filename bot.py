@@ -1,5 +1,6 @@
 import asyncio
 import os
+import subprocess
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -10,7 +11,11 @@ from dotenv import load_dotenv
 from dev_commands import handle_developer_dm_command
 from help_commands import build_server_help_embeds
 from messages import get_message
-from random_song_command import register_random_song_command
+from random_song_command import (
+    build_chunithm_probability_table_embed,
+    build_maimai_probability_table_embed,
+    register_random_song_command,
+)
 from sega_facebook import poll_forever
 from storage import (
     get_sega_facebook_channels,
@@ -55,13 +60,14 @@ tree = app_commands.CommandTree(client)
 
 _synced = False
 _sega_facebook_task: asyncio.Task | None = None
+_update_dm_sent = False
 
 register_random_song_command(tree)
 
 
 @client.event
 async def on_ready():
-    global _sega_facebook_task, _synced
+    global _sega_facebook_task, _synced, _update_dm_sent
 
     if not _synced:
         await tree.sync()
@@ -72,7 +78,31 @@ async def on_ready():
             poll_forever(client, FACEBOOK_ACCESS_TOKEN, SEGA_FACEBOOK_POLL_SECONDS)
         )
 
+    if not _update_dm_sent:
+        await notify_developer_update()
+        _update_dm_sent = True
+
     print(f"Logged in as {client.user}")
+
+
+def get_current_commit() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "log", "-1", "--oneline"],
+            text=True,
+            timeout=3,
+        ).strip()
+    except Exception:
+        return "커밋 정보를 확인하지 못했습니다."
+
+
+async def notify_developer_update() -> None:
+    try:
+        user = client.get_user(BOT_DEVELOPER_ID) or await client.fetch_user(BOT_DEVELOPER_ID)
+        commit = await asyncio.to_thread(get_current_commit)
+        await user.send(f"밀크봇 업데이트 완료!\n`{commit}`")
+    except Exception:
+        return
 
 
 @tree.command(name="ping", description=get_message("slash.ping_description"))
@@ -333,6 +363,27 @@ async def on_message(message: discord.Message):
             return
 
         await handle_user_dm_command(message, client)
+        return
+
+    content = message.content.strip()
+    if content == "마이마이 확률표":
+        try:
+            embed = await build_maimai_probability_table_embed(message.author.id)
+        except Exception:
+            await message.channel.send(get_message("random_song.error_fetch_failed"))
+            return
+
+        await message.channel.send(embed=embed)
+        return
+
+    if content == "츄니즘 확률표":
+        try:
+            embed = await build_chunithm_probability_table_embed(message.author.id)
+        except Exception:
+            await message.channel.send(get_message("random_song.error_fetch_failed"))
+            return
+
+        await message.channel.send(embed=embed)
         return
 
     await handle_notreat(message)

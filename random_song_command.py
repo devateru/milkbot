@@ -57,10 +57,10 @@ def _choice_name(choices: list[app_commands.Choice[str]], value: object) -> str:
     return str(value)
 
 
-def _preset_summary(preset: dict[str, object]) -> str:
+def _preset_summary(preset: dict[str, object], *, include_game: bool = True) -> str:
     parts: list[str] = []
 
-    if "game" in preset:
+    if include_game and "game" in preset:
         parts.append(f"게임={_choice_name(GAME_CHOICES, preset['game'])}")
     if "min_level" in preset:
         parts.append(f"최소 보면상수={preset['min_level']}")
@@ -74,6 +74,26 @@ def _preset_summary(preset: dict[str, object]) -> str:
         parts.append(f"2P 난이도={preset['partner_level']}")
 
     return ", ".join(parts)
+
+
+def _recommendation_content(game: object, applied_preset: dict[str, object]) -> str:
+    lines = [
+        get_message(
+            "random_song.recommendation_text",
+            game=_choice_name(GAME_CHOICES, game),
+        )
+    ]
+    preset_summary = _preset_summary(applied_preset, include_game=False)
+
+    if preset_summary:
+        lines.append(
+            get_message(
+                "random_song.preset_applied",
+                preset=preset_summary,
+            )
+        )
+
+    return "\n".join(lines)
 
 
 def _random_song_options(
@@ -190,15 +210,8 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
             )
             return
 
-        content = None
-        if applied_preset:
-            content = get_message(
-                "random_song.preset_applied",
-                preset=_preset_summary(applied_preset),
-            )
-
         await interaction.followup.send(
-            content=content,
+            content=_recommendation_content(merged_options["game"], applied_preset),
             embeds=response.embeds,
             files=response.files,
         )

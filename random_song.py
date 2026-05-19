@@ -97,6 +97,19 @@ DIFFICULTY_ALIASES = {
     "ult": "high",
 }
 
+DIFFICULTY_CHOICE_ALIASES = {
+    "basic": ("basic",),
+    "advanced": ("advanced",),
+    "expert": ("expert",),
+    "master": ("master",),
+    "remasterultima": ("high",),
+    "remasult": ("high",),
+    "mas~remasult": ("master", "high"),
+    "master~remasterultima": ("master", "high"),
+    "exp~remasult": ("expert", "master", "high"),
+    "expert~remasterultima": ("expert", "master", "high"),
+}
+
 TYPE_ALIASES = {
     "standard": "std",
     "std": "std",
@@ -104,6 +117,7 @@ TYPE_ALIASES = {
     "dx": "dx",
     "utage": "special",
     "宴": "special",
+    "utageworldsend": "special",
     "we": "special",
     "worldsend": "special",
     "world'send": "special",
@@ -130,9 +144,25 @@ def _normalize_compact(value: str) -> str:
     return re.sub(r"[\s_\-]+", "", value.strip().lower())
 
 
+def _normalize_choice(value: str) -> str:
+    return re.sub(r"[\s_\-/:'’]+", "", value.strip().lower())
+
+
+def _resolve_difficulty(value: str, game: str) -> str:
+    if value == "high":
+        return HIGH_DIFFICULTIES[game]
+
+    return value
+
+
 def parse_difficulties(value: str | None, game: str) -> set[str]:
     if not value:
         return {"master", HIGH_DIFFICULTIES[game]}
+
+    choice_key = _normalize_choice(value)
+    choice_difficulties = DIFFICULTY_CHOICE_ALIASES.get(choice_key)
+    if choice_difficulties is not None:
+        return {_resolve_difficulty(difficulty, game) for difficulty in choice_difficulties}
 
     difficulties: set[str] = set()
     normalized_value = re.sub(
@@ -148,9 +178,7 @@ def parse_difficulties(value: str | None, game: str) -> set[str]:
         difficulty = DIFFICULTY_ALIASES.get(token)
         if difficulty is None:
             raise RandomSongError(get_message("random_song.error_unknown_difficulty", value=raw_token))
-        if difficulty == "high":
-            difficulty = HIGH_DIFFICULTIES[game]
-        difficulties.add(difficulty)
+        difficulties.add(_resolve_difficulty(difficulty, game))
 
     return difficulties
 
@@ -162,40 +190,15 @@ def parse_types(value: str | None, game: str) -> set[str] | None:
     if not value:
         return None
 
-    types: set[str] = set()
-    token_pattern = re.compile(
-        r"world'?s\s*end|standard|deluxe|utage|std|dx|we|宴",
-        re.IGNORECASE,
-    )
-    matches = list(token_pattern.finditer(value))
-    if not matches:
+    compact = _normalize_choice(value)
+    chart_type = TYPE_ALIASES.get(compact) or TYPE_ALIASES.get(value.strip().lower())
+    if chart_type is None:
         raise RandomSongError(get_message("random_song.error_unknown_type", value=value))
 
-    leftovers = token_pattern.sub("", value)
-    leftovers = re.sub(r"[,/|\s]+", "", leftovers)
-    if leftovers:
-        raise RandomSongError(get_message("random_song.error_unknown_type", value=leftovers))
-
-    for match in matches:
-        raw_token = match.group(0)
-        compact = _normalize_compact(raw_token)
-        chart_type = TYPE_ALIASES.get(compact) or TYPE_ALIASES.get(raw_token.strip().lower())
-        if chart_type is None:
-            raise RandomSongError(get_message("random_song.error_unknown_type", value=raw_token))
-        types.add(chart_type)
-
     if game == "chunithm":
-        return {"we"} if "special" in types else {"std"}
+        return {"we"} if chart_type == "special" else {"std"}
 
-    resolved: set[str] = set()
-    if "std" in types:
-        resolved.add("std")
-    if "dx" in types:
-        resolved.add("dx")
-    if "special" in types:
-        resolved.add("utage")
-
-    return resolved
+    return {"utage"} if chart_type == "special" else {chart_type}
 
 
 def selected_type_for_default() -> set[str]:

@@ -13,45 +13,15 @@ DIFFICULTY_SUGGESTIONS = [
     ("EXPERT", "EXPERT"),
     ("MASTER", "MASTER"),
     ("RE:MASTER / ULTIMA", "RE:MASTER/ULTIMA"),
-    ("MASTER + RE:MASTER / ULTIMA", "MASTER RE:MASTER/ULTIMA"),
+    ("MAS ~ RE:MAS / ULT", "MAS~RE:MAS/ULT"),
+    ("EXP ~ RE:MAS / ULT", "EXP~RE:MAS/ULT"),
 ]
 
 TYPE_SUGGESTIONS = [
     ("STANDARD", "STANDARD"),
     ("DELUXE", "DELUXE"),
     ("UTAGE / WORLD'S END", "UTAGE/WORLD'S END"),
-    ("STANDARD + DELUXE", "STANDARD DELUXE"),
-    ("STANDARD + UTAGE / WORLD'S END", "STANDARD UTAGE/WORLD'S END"),
-    ("DELUXE + UTAGE / WORLD'S END", "DELUXE UTAGE/WORLD'S END"),
-    ("STANDARD + DELUXE + UTAGE / WORLD'S END", "STANDARD DELUXE UTAGE/WORLD'S END"),
 ]
-
-
-def _matches_current_input(current: str, name: str, value: str) -> bool:
-    current = current.casefold()
-    return current in name.casefold() or current in value.casefold()
-
-
-async def difficulty_autocomplete(
-    interaction: discord.Interaction,
-    current: str,
-) -> list[app_commands.Choice[str]]:
-    return [
-        app_commands.Choice(name=name, value=value)
-        for name, value in DIFFICULTY_SUGGESTIONS
-        if _matches_current_input(current, name, value)
-    ][:25]
-
-
-async def chart_type_autocomplete(
-    interaction: discord.Interaction,
-    current: str,
-) -> list[app_commands.Choice[str]]:
-    return [
-        app_commands.Choice(name=name, value=value)
-        for name, value in TYPE_SUGGESTIONS
-        if _matches_current_input(current, name, value)
-    ][:25]
 
 
 def register_random_song_command(tree: app_commands.CommandTree) -> None:
@@ -84,18 +54,22 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
             app_commands.Choice(name=config["label"], value=genre_key)
             for genre_key, config in GENRE_CHOICES.items()
         ],
-    )
-    @app_commands.autocomplete(
-        difficulty=difficulty_autocomplete,
-        chart_type=chart_type_autocomplete,
+        difficulty=[
+            app_commands.Choice(name=name, value=value)
+            for name, value in DIFFICULTY_SUGGESTIONS
+        ],
+        chart_type=[
+            app_commands.Choice(name=name, value=value)
+            for name, value in TYPE_SUGGESTIONS
+        ],
     )
     async def random_song_command(
         interaction: discord.Interaction,
         game: app_commands.Choice[str] | None = None,
         min_level: float = 1.0,
         genre: app_commands.Choice[str] | None = None,
-        difficulty: str | None = None,
-        chart_type: str | None = None,
+        difficulty: app_commands.Choice[str] | None = None,
+        chart_type: app_commands.Choice[str] | None = None,
         partner_level: float | None = None,
     ):
         await interaction.response.defer(thinking=True)
@@ -105,8 +79,8 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
                 game=game.value if game else "maimai",
                 min_level=min_level,
                 genre=genre.value if genre else None,
-                difficulty=difficulty,
-                chart_type=chart_type,
+                difficulty=difficulty.value if difficulty else None,
+                chart_type=chart_type.value if chart_type else None,
                 partner_level=partner_level,
             )
         except RandomSongError as exc:

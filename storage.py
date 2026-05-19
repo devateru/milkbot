@@ -13,6 +13,7 @@ def default_state() -> dict[str, Any]:
         "sega_facebook_channels": {},
         "sega_facebook_seen_post_ids": {},
         "random_song_presets": {},
+        "random_song_unconfigured_warnings": {},
     }
 
 
@@ -107,12 +108,32 @@ def load_state() -> dict[str, Any]:
             if fixed_game_presets:
                 fixed_random_song_presets[game] = fixed_game_presets
 
+    random_song_unconfigured_warnings = data.get("random_song_unconfigured_warnings", {})
+    fixed_random_song_unconfigured_warnings: dict[str, dict[str, str]] = {}
+
+    if isinstance(random_song_unconfigured_warnings, dict):
+        for game in ("maimai", "chunithm"):
+            game_warnings = random_song_unconfigured_warnings.get(game)
+            if not isinstance(game_warnings, dict):
+                continue
+
+            fixed_game_warnings: dict[str, str] = {}
+            for uid, date_text in game_warnings.items():
+                uid_text = str(uid).strip()
+                date_text = str(date_text).strip()
+                if uid_text.isdigit() and date_text:
+                    fixed_game_warnings[uid_text] = date_text
+
+            if fixed_game_warnings:
+                fixed_random_song_unconfigured_warnings[game] = fixed_game_warnings
+
     return {
         "notreat_rules": fixed_rules,
         "treat_allowed_guild_ids": fixed_guild_ids,
         "sega_facebook_channels": fixed_facebook_channels,
         "sega_facebook_seen_post_ids": fixed_seen_post_ids,
         "random_song_presets": fixed_random_song_presets,
+        "random_song_unconfigured_warnings": fixed_random_song_unconfigured_warnings,
     }
 
 
@@ -255,3 +276,24 @@ def remove_random_song_preset(game: str, uid: int) -> bool:
     del game_presets[uid_text]
     save_state()
     return True
+
+
+def has_random_song_unconfigured_warning(game: str, uid: int, date_text: str) -> bool:
+    warnings = state.setdefault("random_song_unconfigured_warnings", {})
+    game_warnings = warnings.setdefault(game, {})
+    if not isinstance(game_warnings, dict):
+        warnings[game] = {}
+        return False
+
+    return game_warnings.get(str(uid)) == date_text
+
+
+def set_random_song_unconfigured_warning(game: str, uid: int, date_text: str) -> None:
+    warnings = state.setdefault("random_song_unconfigured_warnings", {})
+    game_warnings = warnings.setdefault(game, {})
+    if not isinstance(game_warnings, dict):
+        game_warnings = {}
+        warnings[game] = game_warnings
+
+    game_warnings[str(uid)] = date_text
+    save_state()

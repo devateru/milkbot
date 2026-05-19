@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import discord
 from discord import app_commands
 
@@ -13,6 +16,9 @@ from random_song import (
 )
 from storage import (
     get_random_song_preset,
+    has_random_song_unconfigured_warning,
+    remove_random_song_preset,
+    set_random_song_unconfigured_warning,
     set_random_song_preset,
 )
 
@@ -46,6 +52,17 @@ MAIMAI_TYPE_SUGGESTIONS = [
 CHUNITHM_TYPE_SUGGESTIONS = [
     ("STANDARD", "STANDARD"),
     ("WORLD'S END", "UTAGE/WORLD'S END"),
+]
+
+PRESET_RESET_SUGGESTIONS = [
+    ("전체 프리셋", "all"),
+    ("최소 보면상수", "min_level"),
+    ("최대 보면상수", "max_level"),
+    ("장르", "genre"),
+    ("난이도", "difficulty"),
+    ("유형", "chart_type"),
+    ("버전", "version"),
+    ("2P 난이도", "partner_level"),
 ]
 
 MAIMAI_VERSION_SUGGESTIONS = [
@@ -128,6 +145,7 @@ MAIMAI_TYPE_CHOICES = _choices(MAIMAI_TYPE_SUGGESTIONS)
 CHUNITHM_TYPE_CHOICES = _choices(CHUNITHM_TYPE_SUGGESTIONS)
 MAIMAI_VERSION_CHOICES = _choices(MAIMAI_VERSION_SUGGESTIONS)
 CHUNITHM_VERSION_CHOICES = _choices(CHUNITHM_VERSION_SUGGESTIONS)
+PRESET_RESET_CHOICES = _choices(PRESET_RESET_SUGGESTIONS)
 
 
 def _matches_current_input(current: str, name: str, value: str) -> bool:
@@ -334,6 +352,14 @@ def _format_probability_percent(value: float) -> str:
     return f"{percent:.2f}".rstrip("0").rstrip(".")
 
 
+def _today_text() -> str:
+    return datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
+
+
+def _has_any_options(options: dict[str, object]) -> bool:
+    return any(value is not None for value in options.values())
+
+
 def _merge_with_preset(
     game: str,
     uid: int,
@@ -449,6 +475,8 @@ async def _send_random_song(
     version_choices: list[app_commands.Choice[str]],
 ) -> None:
     await interaction.response.defer(thinking=True)
+    raw_options_empty = not _has_any_options(options)
+    current_preset = get_random_song_preset(game, interaction.user.id)
     merged_options, applied_preset = _merge_with_preset(game, interaction.user.id, options)
 
     try:
@@ -472,6 +500,15 @@ async def _send_random_song(
         )
         return
 
+    if raw_options_empty and not current_preset:
+        today_text = _today_text()
+        if not has_random_song_unconfigured_warning(game, interaction.user.id, today_text):
+            await interaction.followup.send(
+                get_message("random_song.unconfigured_warning"),
+                ephemeral=True,
+            )
+            set_random_song_unconfigured_warning(game, interaction.user.id, today_text)
+
     await interaction.followup.send(
         content=_recommendation_content(
             game_label,
@@ -491,6 +528,7 @@ async def _save_preset(
     *,
     game: str,
     options: dict[str, object],
+    reset: app_commands.Choice[str] | None,
     genre_choices: list[app_commands.Choice[str]],
     difficulty_choices: list[app_commands.Choice[str]],
     type_choices: list[app_commands.Choice[str]],
@@ -498,8 +536,9 @@ async def _save_preset(
 ) -> None:
     compact_options = _compact_options(options)
     current_preset = get_random_song_preset(game, interaction.user.id)
+    reset_key = reset.value if reset else None
 
-    if not compact_options:
+    if not compact_options and reset_key is None:
         message_key = "random_song.preset_current" if current_preset else "random_song.preset_empty"
         await interaction.response.send_message(
             get_message(
@@ -516,15 +555,55 @@ async def _save_preset(
         )
         return
 
-    updated_preset = {**current_preset, **compact_options}
-    changes = _preset_changes_summary(
-        current_preset,
+    if reset_key == "all":
+        removed = remove_random_song_preset(game, interaction.user.id)
+        await interaction.response.send_message(
+            get_message(
+                "random_song.preset_reset_all" if removed else "random_song.preset_empty",
+            ),
+            ephemeral=True,
+        )
+        return
+
+    reset_changes = ""
+    updated_preset = dict(current_preset)
+    if reset_key is not None:
+        if reset_key in updated_preset:
+            old_text = _format_preset_value(
+                reset_key,
+                updated_preset[reset_key],
+                genre_choices=genre_choices,
+                difficulty_choices=difficulty_choices,
+                type_choices=type_choices,
+                version_choices=version_choices,
+            )
+            del updated_preset[reset_key]
+            reset_label = _choice_name(PRESET_RESET_CHOICES, reset_key)
+            reset_changes = f"{reset_label}: {old_text} → 없음"
+        else:
+            reset_label = _choice_name(PRESET_RESET_CHOICES, reset_key)
+            reset_changes = f"{reset_label}: 변경 없음"
+
+    before_update = dict(updated_preset)
+    updated_preset.update(compact_options)
+    option_changes = _preset_changes_summary(
+        before_update,
         compact_options,
         genre_choices=genre_choices,
         difficulty_choices=difficulty_choices,
         type_choices=type_choices,
         version_choices=version_choices,
     )
+    changes = ", ".join(part for part in [reset_changes, option_changes] if part)
+
+    if not updated_preset:
+        remove_random_song_preset(game, interaction.user.id)
+        await interaction.response.send_message(
+            get_message("random_song.preset_reset_all" if current_preset else "random_song.preset_empty"),
+            ephemeral=True,
+        )
+        return
+
     set_random_song_preset(game, interaction.user.id, updated_preset)
     await interaction.response.send_message(
         get_message(
@@ -646,6 +725,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
         description=get_message("slash.maimai_song_preset_description"),
     )
     @app_commands.rename(
+        reset="초기화",
         min_level="최소_보면상수",
         max_level="최대_보면상수",
         genre="장르",
@@ -655,6 +735,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
         partner_level="2p_난이도",
     )
     @app_commands.describe(
+        reset=get_message("random_song.option_preset_reset"),
         min_level=get_message("random_song.option_min_level"),
         max_level=get_message("random_song.option_max_level"),
         genre=get_message("random_song.option_genre"),
@@ -664,6 +745,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
         partner_level=get_message("random_song.option_partner_level"),
     )
     @app_commands.choices(
+        reset=PRESET_RESET_CHOICES,
         genre=MAIMAI_GENRE_APP_CHOICES,
         difficulty=MAIMAI_DIFFICULTY_CHOICES,
         chart_type=MAIMAI_TYPE_CHOICES,
@@ -671,6 +753,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
     @app_commands.autocomplete(version=maimai_version_autocomplete)
     async def maimai_song_preset_command(
         interaction: discord.Interaction,
+        reset: app_commands.Choice[str] | None = None,
         min_level: float | None = None,
         max_level: float | None = None,
         genre: app_commands.Choice[str] | None = None,
@@ -683,6 +766,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
             interaction,
             game="maimai",
             options=_random_song_options(min_level, max_level, genre, difficulty, chart_type, version, partner_level),
+            reset=reset,
             genre_choices=MAIMAI_GENRE_APP_CHOICES,
             difficulty_choices=MAIMAI_DIFFICULTY_CHOICES,
             type_choices=MAIMAI_TYPE_CHOICES,
@@ -694,6 +778,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
         description=get_message("slash.chunithm_song_preset_description"),
     )
     @app_commands.rename(
+        reset="초기화",
         min_level="최소_보면상수",
         max_level="최대_보면상수",
         genre="장르",
@@ -703,6 +788,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
         partner_level="2p_난이도",
     )
     @app_commands.describe(
+        reset=get_message("random_song.option_preset_reset"),
         min_level=get_message("random_song.option_min_level"),
         max_level=get_message("random_song.option_max_level"),
         genre=get_message("random_song.option_genre"),
@@ -712,6 +798,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
         partner_level=get_message("random_song.option_partner_level"),
     )
     @app_commands.choices(
+        reset=PRESET_RESET_CHOICES,
         genre=CHUNITHM_GENRE_APP_CHOICES,
         difficulty=CHUNITHM_DIFFICULTY_CHOICES,
         chart_type=CHUNITHM_TYPE_CHOICES,
@@ -719,6 +806,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
     @app_commands.autocomplete(version=chunithm_version_autocomplete)
     async def chunithm_song_preset_command(
         interaction: discord.Interaction,
+        reset: app_commands.Choice[str] | None = None,
         min_level: float | None = None,
         max_level: float | None = None,
         genre: app_commands.Choice[str] | None = None,
@@ -731,6 +819,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
             interaction,
             game="chunithm",
             options=_random_song_options(min_level, max_level, genre, difficulty, chart_type, version, partner_level),
+            reset=reset,
             genre_choices=CHUNITHM_GENRE_APP_CHOICES,
             difficulty_choices=CHUNITHM_DIFFICULTY_CHOICES,
             type_choices=CHUNITHM_TYPE_CHOICES,

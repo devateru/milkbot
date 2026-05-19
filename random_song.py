@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import random
 import re
+import urllib.parse
 import urllib.request
 from asyncio import to_thread
 from dataclasses import dataclass
@@ -18,6 +19,16 @@ DATA_SOURCES = {
     "maimai": "https://dp4p6x0xfi5o9.cloudfront.net/maimai",
     "chunithm": "https://dp4p6x0xfi5o9.cloudfront.net/chunithm",
 }
+
+SITE_URL = "https://arcade-songs.zetaraku.dev"
+
+GAME_SEARCH_LABELS = {
+    "maimai": "maimai",
+    "chunithm": "CHUNITHM",
+}
+
+MAIMAI_NEW_VERSIONS = {"PRiSM PLUS", "CiRCLE", "CiRCLE PLUS"}
+CHUNITHM_NEW_VERSIONS = {"X-VERSE-X"}
 
 DIFFICULTY_COLORS = {
     "basic": 0x22BB5B,
@@ -139,6 +150,8 @@ class SongPick:
     partner_sheet: dict[str, Any] | None
     data_source_url: str
     update_time: str
+    requested_level: float
+    selected_level_probability: float
 
 
 @dataclass(frozen=True)
@@ -208,6 +221,39 @@ def parse_types(value: str | None, game: str) -> set[str] | None:
     return {"utage"} if chart_type == "special" else {chart_type}
 
 
+def parse_version_filter(
+    game: str,
+    maimai_version: str | None,
+    chunithm_version: str | None,
+    data: dict[str, Any],
+) -> set[str] | None:
+    selected_version = maimai_version if game == "maimai" else chunithm_version
+    if not selected_version:
+        return None
+
+    versions = {
+        version["version"]
+        for version in data.get("versions", [])
+        if isinstance(version, dict) and version.get("version")
+    }
+
+    if game == "maimai":
+        if selected_version == "new":
+            return MAIMAI_NEW_VERSIONS & versions
+        if selected_version == "old":
+            return versions - MAIMAI_NEW_VERSIONS
+    else:
+        if selected_version == "new":
+            return CHUNITHM_NEW_VERSIONS & versions
+        if selected_version == "old":
+            return versions - CHUNITHM_NEW_VERSIONS
+
+    if selected_version in versions:
+        return {selected_version}
+
+    raise RandomSongError(get_message("random_song.error_unknown_version", value=selected_version))
+
+
 def selected_type_for_default() -> set[str]:
     return {"std"} if random.random() < 0.2 else {"dx"}
 
@@ -275,24 +321,45 @@ def _find_partner_sheet(
     return random.choice(candidates) if candidates else None
 
 
-def _choose_level(levels: list[float]) -> float:
+def _level_probabilities(levels: list[float]) -> dict[float, float]:
     unique_levels = sorted(set(levels))
     if not unique_levels:
         raise RandomSongError(get_message("random_song.error_no_matches"))
 
-    if len(unique_levels) >= 3 and random.random() < 0.035:
-        return random.choice(unique_levels[-min(5, len(unique_levels)):])
-
     max_rank = len(unique_levels) - 1
-    weights: list[float] = []
+    weights_by_level: dict[float, float] = {}
     for rank, level in enumerate(unique_levels):
         distance = rank + 1
         weight = 1 / (distance**1.35)
         if rank == max_rank:
             weight *= 1.8
-        weights.append(weight)
+        weights_by_level[level] = weight
 
-    return random.choices(unique_levels, weights=weights, k=1)[0]
+    weight_sum = sum(weights_by_level.values())
+    probabilities = {
+        level: weight / weight_sum
+        for level, weight in weights_by_level.items()
+    }
+
+    if len(unique_levels) >= 3:
+        top_levels = unique_levels[-min(5, len(unique_levels)):]
+        top_bonus = 0.035 / len(top_levels)
+        probabilities = {
+            level: probability * 0.965 + (top_bonus if level in top_levels else 0)
+            for level, probability in probabilities.items()
+        }
+
+    return probabilities
+
+
+def _choose_level(levels: list[float]) -> tuple[float, float]:
+    probabilities = _level_probabilities(levels)
+    selected_level = random.choices(
+        list(probabilities.keys()),
+        weights=list(probabilities.values()),
+        k=1,
+    )[0]
+    return selected_level, probabilities[selected_level]
 
 
 def pick_random_song(
@@ -300,9 +367,11 @@ def pick_random_song(
     *,
     game: str,
     min_level: float,
+    level_fixed: bool,
     genre: str | None,
     difficulties: set[str],
     chart_types: set[str],
+    version_filter: set[str] | None,
     partner_min_level: float | None,
     partner_max_level: float | None,
 ) -> SongPick:
@@ -312,10 +381,14 @@ def pick_random_song(
     for song in data.get("songs", []):
         if not _matches_genre(song, game, genre):
             continue
+        if version_filter is not None and song.get("version") not in version_filter:
+            continue
 
         for sheet in song.get("sheets", []):
             level = _chart_level(sheet)
             if level is None or level < min_level:
+                continue
+            if level_fixed and abs(level - min_level) > 0.0001:
                 continue
             if not _is_intl(sheet):
                 continue
@@ -332,7 +405,7 @@ def pick_random_song(
 
             candidates_by_level.setdefault(level, []).append((song, sheet, partner_sheet))
 
-    selected_level = _choose_level(list(candidates_by_level))
+    selected_level, selected_probability = _choose_level(list(candidates_by_level))
     song, sheet, partner_sheet = random.choice(candidates_by_level[selected_level])
     return SongPick(
         game=game,
@@ -341,6 +414,8 @@ def pick_random_song(
         partner_sheet=partner_sheet,
         data_source_url=DATA_SOURCES[game],
         update_time=data.get("updateTime", ""),
+        requested_level=min_level,
+        selected_level_probability=selected_probability,
     )
 
 
@@ -372,6 +447,32 @@ async def _cover_file(pick: SongPick) -> discord.File | None:
 def _version(song: dict[str, Any], sheet: dict[str, Any]) -> str:
     intl_override = sheet.get("regionOverrides", {}).get("intl", {})
     return intl_override.get("version") or sheet.get("version") or song.get("version") or "-"
+
+
+def _youtube_search_url(pick: SongPick) -> str:
+    difficulty = str(pick.sheet.get("difficulty", "")).lower()
+    query = " ".join(
+        [
+            GAME_SEARCH_LABELS[pick.game],
+            _field_value(pick.song.get("title")),
+            DIFFICULTY_LABELS.get(difficulty, _field_value(pick.sheet.get("difficulty"))),
+        ]
+    )
+    return "https://www.youtube.com/results?" + urllib.parse.urlencode({"search_query": query})
+
+
+def _arcade_song_url(pick: SongPick) -> str:
+    query = urllib.parse.urlencode({"id": _field_value(pick.song.get("songId"))})
+    return f"{SITE_URL}/{pick.game}/song/?{query}"
+
+
+def _format_probability(value: float) -> str:
+    percent = value * 100
+
+    if percent >= 10:
+        return f"{percent:.1f}".rstrip("0").rstrip(".")
+
+    return f"{percent:.2f}".rstrip("0").rstrip(".")
 
 
 def _field_value(value: Any) -> str:
@@ -408,6 +509,7 @@ def _build_primary_embed(pick: SongPick) -> discord.Embed:
     title = _field_value(song.get("title"))
     embed = discord.Embed(
         title=title,
+        url=_youtube_search_url(pick),
         color=DIFFICULTY_COLORS.get(difficulty, 0x1976D2),
     )
 
@@ -417,10 +519,25 @@ def _build_primary_embed(pick: SongPick) -> discord.Embed:
     embed.add_field(name=get_message("random_song.field_difficulty"), value=_format_difficulty(sheet), inline=True)
     embed.add_field(name=get_message("random_song.field_note_designer"), value=_field_value(sheet.get("noteDesigner")), inline=True)
     embed.add_field(name=get_message("random_song.field_version"), value=_version(song, sheet), inline=True)
+    embed.add_field(
+        name=get_message("random_song.field_links"),
+        value=f"[arcade-songs]({_arcade_song_url(pick)})",
+        inline=True,
+    )
 
     cover_url = _cover_url(pick)
     if cover_url:
         embed.set_image(url=cover_url)
+
+    selected_level = _chart_level(sheet)
+    if selected_level is not None and selected_level > pick.requested_level:
+        embed.set_footer(
+            text=get_message(
+                "random_song.higher_level_footer",
+                probability=_format_probability(pick.selected_level_probability),
+                level=_field_value(selected_level),
+            )
+        )
 
     return embed
 
@@ -453,6 +570,9 @@ async def choose_random_song(
     genre: str | None,
     difficulty: str | None,
     chart_type: str | None,
+    maimai_version: str | None,
+    chunithm_version: str | None,
+    level_fixed: bool,
     partner_level: float | None,
 ) -> list[discord.Embed]:
     pick = await choose_random_song_pick(
@@ -461,6 +581,9 @@ async def choose_random_song(
         genre=genre,
         difficulty=difficulty,
         chart_type=chart_type,
+        maimai_version=maimai_version,
+        chunithm_version=chunithm_version,
+        level_fixed=level_fixed,
         partner_level=partner_level,
     )
     return build_song_embeds(pick)
@@ -473,6 +596,9 @@ async def choose_random_song_response(
     genre: str | None,
     difficulty: str | None,
     chart_type: str | None,
+    maimai_version: str | None,
+    chunithm_version: str | None,
+    level_fixed: bool,
     partner_level: float | None,
 ) -> RandomSongResponse:
     pick = await choose_random_song_pick(
@@ -481,6 +607,9 @@ async def choose_random_song_response(
         genre=genre,
         difficulty=difficulty,
         chart_type=chart_type,
+        maimai_version=maimai_version,
+        chunithm_version=chunithm_version,
+        level_fixed=level_fixed,
         partner_level=partner_level,
     )
     embeds = build_song_embeds(pick)
@@ -500,6 +629,9 @@ async def choose_random_song_pick(
     genre: str | None,
     difficulty: str | None,
     chart_type: str | None,
+    maimai_version: str | None,
+    chunithm_version: str | None,
+    level_fixed: bool,
     partner_level: float | None,
 ) -> SongPick:
     if game not in DATA_SOURCES:
@@ -510,15 +642,18 @@ async def choose_random_song_pick(
 
     difficulties = parse_difficulties(difficulty, game)
     chart_types = parse_types(chart_type, game) or selected_type_for_default()
-
     data = await fetch_game_data(game)
+    version_filter = parse_version_filter(game, maimai_version, chunithm_version, data)
+
     pick = pick_random_song(
         data,
         game=game,
         min_level=min_level,
+        level_fixed=level_fixed,
         genre=genre,
         difficulties=difficulties,
         chart_types=chart_types,
+        version_filter=version_filter,
         partner_min_level=partner_min_level,
         partner_max_level=partner_max_level,
     )

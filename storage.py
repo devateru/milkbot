@@ -80,6 +80,9 @@ def load_state() -> dict[str, Any]:
             "genre",
             "difficulty",
             "chart_type",
+            "maimai_version",
+            "chunithm_version",
+            "level_fixed",
             "partner_level",
         }
 

@@ -51,6 +51,11 @@ HIGH_DIFFICULTIES = {
     "chunithm": "ultima",
 }
 
+DATA_DIFFICULTIES = {
+    "maimai": {"basic", "advanced", "expert", "master", "remaster"},
+    "chunithm": {"basic", "advanced", "expert", "master", "ultima"},
+}
+
 MAIMAI_GENRE_CHOICES = {
     "pops": {
         "label": "POPS & ANIME",
@@ -190,7 +195,7 @@ class SongPick:
     partner_sheet: dict[str, Any] | None
     data_source_url: str
     update_time: str
-    requested_level: float
+    requested_level: float | None
     max_level: float | None
     selected_level_probability: float
 
@@ -218,7 +223,7 @@ def _resolve_difficulty(value: str, game: str) -> str:
 
 def parse_difficulties(value: str | None, game: str) -> set[str]:
     if not value:
-        return {"master", HIGH_DIFFICULTIES[game]}
+        return set(DATA_DIFFICULTIES[game])
 
     choice_key = _normalize_choice(value)
     choice_difficulties = DIFFICULTY_CHOICE_ALIASES.get(choice_key)
@@ -414,7 +419,7 @@ def pick_random_song(
     data: dict[str, Any],
     *,
     game: str,
-    min_level: float,
+    min_level: float | None,
     max_level: float | None,
     genre: str | None,
     difficulties: set[str],
@@ -434,7 +439,9 @@ def pick_random_song(
 
         for sheet in song.get("sheets", []):
             level = _chart_level(sheet)
-            if level is None or level < min_level:
+            if level is None:
+                continue
+            if min_level is not None and level < min_level:
                 continue
             if max_level is not None and level > max_level:
                 continue
@@ -452,6 +459,28 @@ def pick_random_song(
                     continue
 
             candidates_by_level.setdefault(level, []).append((song, sheet, partner_sheet))
+
+    if min_level is None and max_level is None:
+        all_candidates = [
+            candidate
+            for candidates in candidates_by_level.values()
+            for candidate in candidates
+        ]
+        if not all_candidates:
+            raise RandomSongError(get_message("random_song.error_no_matches"))
+
+        song, sheet, partner_sheet = random.choice(all_candidates)
+        return SongPick(
+            game=game,
+            song=song,
+            sheet=sheet,
+            partner_sheet=partner_sheet,
+            data_source_url=DATA_SOURCES[game],
+            update_time=data.get("updateTime", ""),
+            requested_level=min_level,
+            max_level=max_level,
+            selected_level_probability=1 / len(all_candidates),
+        )
 
     if max_level is not None:
         selected_level, selected_probability = _choose_uniform_level(list(candidates_by_level))
@@ -538,6 +567,14 @@ def _field_value(value: Any) -> str:
     return str(value)
 
 
+def _genre_value(song: dict[str, Any]) -> str:
+    value = _field_value(song.get("category"))
+    if song.get("isLocked") is True:
+        return f"{value} 🔒"
+
+    return value
+
+
 def _format_difficulty(sheet: dict[str, Any]) -> str:
     difficulty = str(sheet.get("difficulty", "")).lower()
     difficulty_label = DIFFICULTY_LABELS.get(difficulty, _field_value(sheet.get("difficulty")))
@@ -569,7 +606,7 @@ def _build_primary_embed(pick: SongPick) -> discord.Embed:
         color=DIFFICULTY_COLORS.get(difficulty, 0x1976D2),
     )
 
-    embed.add_field(name=get_message("random_song.field_genre"), value=_field_value(song.get("category")), inline=True)
+    embed.add_field(name=get_message("random_song.field_genre"), value=_genre_value(song), inline=True)
     embed.add_field(name=get_message("random_song.field_bpm"), value=_field_value(song.get("bpm")), inline=True)
     embed.add_field(name=get_message("random_song.field_artist"), value=_field_value(song.get("artist")), inline=False)
     embed.add_field(name=get_message("random_song.field_difficulty"), value=_format_difficulty(sheet), inline=True)
@@ -580,7 +617,12 @@ def _build_primary_embed(pick: SongPick) -> discord.Embed:
         embed.set_image(url=cover_url)
 
     selected_level = _chart_level(sheet)
-    if selected_level is not None and pick.max_level is None and selected_level > pick.requested_level:
+    if (
+        selected_level is not None
+        and pick.requested_level is not None
+        and pick.max_level is None
+        and selected_level > pick.requested_level
+    ):
         embed.set_footer(
             text=get_message(
                 "random_song.higher_level_footer",
@@ -616,7 +658,7 @@ def _build_partner_embed(pick: SongPick) -> discord.Embed:
 async def choose_random_song(
     *,
     game: str,
-    min_level: float,
+    min_level: float | None,
     max_level: float | None,
     genre: str | None,
     difficulty: str | None,
@@ -640,7 +682,7 @@ async def choose_random_song(
 async def choose_random_song_response(
     *,
     game: str,
-    min_level: float,
+    min_level: float | None,
     max_level: float | None,
     genre: str | None,
     difficulty: str | None,
@@ -671,7 +713,7 @@ async def choose_random_song_response(
 async def choose_random_song_pick(
     *,
     game: str,
-    min_level: float,
+    min_level: float | None,
     max_level: float | None,
     genre: str | None,
     difficulty: str | None,

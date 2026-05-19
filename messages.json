@@ -14,7 +14,7 @@
     "chunithm_song_preset_description": "츄니선곡 기본 옵션 프리셋을 저장하거나 삭제합니다."
   },
   "random_song": {
-    "option_min_level": "이 보면상수 이상에서 선곡합니다.",
+    "option_min_level": "이 보면상수 이상에서 선곡합니다. 비워두면 전체 채보에서 뽑습니다.",
     "option_max_level": "이 보면상수 이하에서 선곡합니다. 입력하면 범위 안에서 균등 랜덤으로 뽑습니다.",
     "option_genre": "장르 폴더 필터입니다.",
     "option_maimai_version": "maimai 버전 필터입니다.",
@@ -31,9 +31,11 @@
     "partner_embed_title": "2P 추천 보면",
     "recommendation_text": "밀크봇의 {game} 추천곡이에요!",
     "preset_applied": "(프리셋: {preset})",
-    "preset_saved": "선곡 프리셋을 저장했습니다: {preset}",
+    "preset_saved": "선곡 프리셋을 저장했습니다: {preset}\n변경: {changes}",
     "preset_cleared": "선곡 프리셋을 삭제했습니다.",
     "preset_empty": "저장된 선곡 프리셋이 없습니다.",
+    "preset_current": "현재 선곡 프리셋입니다: {preset}",
+    "preset_no_changes": "변경 없음",
     "error_unknown_difficulty": "알 수 없는 난이도예요: `{value}`",
     "error_unknown_type": "알 수 없는 유형이에요: `{value}`",
     "error_unknown_genre": "알 수 없는 장르예요: `{value}`",
@@ -41,8 +43,8 @@
     "error_no_matches": "조건에 맞는 보면이 없어요.",
     "error_invalid_game": "게임은 `maimai DX` 또는 `CHUNITHM`만 가능해요.",
     "error_fetch_failed": "arcade-songs 데이터를 가져오는 중 문제가 생겼어요. 잠시 뒤 다시 시도해줘요.",
-    "option_maimai_difficulty": "BASIC, ADVANCED, EXPERT, MASTER, RE:MASTER, MAS~RE:MAS, EXP~RE:MAS 중 선택.",
-    "option_chunithm_difficulty": "BASIC, ADVANCED, EXPERT, MASTER, ULTIMA, MAS~ULT, EXP~ULT 중 선택.",
+    "option_maimai_difficulty": "BASIC, ADVANCED, EXPERT, MASTER, RE:MASTER, MAS~RE:MAS, EXP~RE:MAS 중 선택. 비워두면 전체 난이도.",
+    "option_chunithm_difficulty": "BASIC, ADVANCED, EXPERT, MASTER, ULTIMA, MAS~ULT, EXP~ULT 중 선택. 비워두면 전체 난이도.",
     "option_maimai_chart_type": "STANDARD, DELUXE, UTAGE 중 선택.",
     "option_chunithm_chart_type": "STANDARD, WORLD'S END 중 선택."
   },

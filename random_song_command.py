@@ -12,7 +12,6 @@ from random_song import (
 )
 from storage import (
     get_random_song_preset,
-    remove_random_song_preset,
     set_random_song_preset,
 )
 
@@ -193,6 +192,77 @@ def _preset_summary(
     return ", ".join(parts)
 
 
+def _format_preset_value(
+    key: str,
+    value: object,
+    *,
+    genre_choices: list[app_commands.Choice[str]],
+    difficulty_choices: list[app_commands.Choice[str]],
+    type_choices: list[app_commands.Choice[str]],
+    version_choices: list[app_commands.Choice[str]],
+) -> str:
+    if key == "genre":
+        return _choice_name(genre_choices, value)
+    if key == "difficulty":
+        return _choice_name(difficulty_choices, value)
+    if key == "chart_type":
+        return _choice_name(type_choices, value)
+    if key == "version":
+        return _choice_name(version_choices, value)
+
+    return str(value)
+
+
+def _preset_changes_summary(
+    before: dict[str, object],
+    touched: dict[str, object],
+    *,
+    genre_choices: list[app_commands.Choice[str]],
+    difficulty_choices: list[app_commands.Choice[str]],
+    type_choices: list[app_commands.Choice[str]],
+    version_choices: list[app_commands.Choice[str]],
+) -> str:
+    labels = {
+        "min_level": "최소 보면상수",
+        "max_level": "최대 보면상수",
+        "genre": "장르",
+        "difficulty": "난이도",
+        "chart_type": "유형",
+        "version": "버전",
+        "partner_level": "2P 난이도",
+    }
+    changes: list[str] = []
+
+    for key, new_value in touched.items():
+        old_value = before.get(key)
+        if old_value == new_value:
+            continue
+
+        old_text = (
+            _format_preset_value(
+                key,
+                old_value,
+                genre_choices=genre_choices,
+                difficulty_choices=difficulty_choices,
+                type_choices=type_choices,
+                version_choices=version_choices,
+            )
+            if old_value is not None
+            else "없음"
+        )
+        new_text = _format_preset_value(
+            key,
+            new_value,
+            genre_choices=genre_choices,
+            difficulty_choices=difficulty_choices,
+            type_choices=type_choices,
+            version_choices=version_choices,
+        )
+        changes.append(f"{labels[key]}: {old_text} → {new_text}")
+
+    return ", ".join(changes)
+
+
 def _recommendation_content(
     game_label: str,
     applied_preset: dict[str, object],
@@ -267,7 +337,7 @@ def _merge_with_preset(
         if options.get(key) is None
     }
     merged = {
-        "min_level": options.get("min_level") if options.get("min_level") is not None else preset.get("min_level", 1.0),
+        "min_level": options.get("min_level") if options.get("min_level") is not None else preset.get("min_level"),
         "max_level": options.get("max_level") if options.get("max_level") is not None else preset.get("max_level"),
         "genre": options.get("genre") if options.get("genre") is not None else preset.get("genre"),
         "difficulty": options.get("difficulty") if options.get("difficulty") is not None else preset.get("difficulty"),
@@ -296,7 +366,7 @@ async def _send_random_song(
     try:
         response = await choose_random_song_response(
             game=game,
-            min_level=float(merged_options["min_level"]),
+            min_level=float(merged_options["min_level"]) if merged_options.get("min_level") is not None else None,
             max_level=float(merged_options["max_level"]) if merged_options.get("max_level") is not None else None,
             genre=str(merged_options["genre"]) if merged_options.get("genre") is not None else None,
             difficulty=str(merged_options["difficulty"]) if merged_options.get("difficulty") is not None else None,
@@ -339,27 +409,46 @@ async def _save_preset(
     version_choices: list[app_commands.Choice[str]],
 ) -> None:
     compact_options = _compact_options(options)
+    current_preset = get_random_song_preset(game, interaction.user.id)
 
     if not compact_options:
-        removed = remove_random_song_preset(game, interaction.user.id)
-        message_key = "random_song.preset_cleared" if removed else "random_song.preset_empty"
+        message_key = "random_song.preset_current" if current_preset else "random_song.preset_empty"
         await interaction.response.send_message(
-            get_message(message_key),
+            get_message(
+                message_key,
+                preset=_preset_summary(
+                    current_preset,
+                    genre_choices=genre_choices,
+                    difficulty_choices=difficulty_choices,
+                    type_choices=type_choices,
+                    version_choices=version_choices,
+                ),
+            ),
             ephemeral=True,
         )
         return
 
-    set_random_song_preset(game, interaction.user.id, compact_options)
+    updated_preset = {**current_preset, **compact_options}
+    changes = _preset_changes_summary(
+        current_preset,
+        compact_options,
+        genre_choices=genre_choices,
+        difficulty_choices=difficulty_choices,
+        type_choices=type_choices,
+        version_choices=version_choices,
+    )
+    set_random_song_preset(game, interaction.user.id, updated_preset)
     await interaction.response.send_message(
         get_message(
             "random_song.preset_saved",
             preset=_preset_summary(
-                compact_options,
+                updated_preset,
                 genre_choices=genre_choices,
                 difficulty_choices=difficulty_choices,
                 type_choices=type_choices,
                 version_choices=version_choices,
             ),
+            changes=changes or get_message("random_song.preset_no_changes"),
         ),
         ephemeral=True,
     )

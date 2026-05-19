@@ -48,6 +48,7 @@
     "slash_help": "`/help` - 사용 가능한 명령어를 확인합니다.",
     "slash_ping": "`/ping` - 밀크봇이 응답하는지 확인합니다.",
     "slash_gameplaza": "`/겜플라이브` - 게임플라자 라이브 상태를 확인합니다.",
+    "slash_sega_facebook": "`/세가페북` - maimai DX / CHUNITHM Facebook 새 게시물 알림을 관리합니다.",
     "user_treat_list": "`!m treat` - 내 treat 목록을 확인합니다.",
     "user_treat_add": "`!m treat {treat}` - 내 treat을 추가합니다.",
     "user_treat_help": "`!m treat help` - treat 도움말 영상을 확인합니다.",
@@ -90,7 +91,7 @@
       "fields": [
         {
           "name": "슬래시 명령어",
-          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}",
+          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_sega_facebook}",
           "inline": false
         }
       ]

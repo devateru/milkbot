@@ -1,6 +1,14 @@
 # milkbot
 random personal discord bot
 
+## environment
+
+- `DISCORD_TOKEN`: Discord bot token
+- `BOT_DEVELOPER_ID`: bot developer Discord user ID
+- `FACEBOOK_ACCESS_TOKEN`: Facebook Graph API token used by `/세가페북`.
+  Public page feeds require a token with Facebook's page content access, or a page token for pages you manage.
+- `SEGA_FACEBOOK_POLL_SECONDS`: Facebook post check interval, default `60`
+
 ideas/TODOs
 
 - fix the gameplaza live checker thingy

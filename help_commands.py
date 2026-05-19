@@ -9,6 +9,7 @@ def build_server_help_embeds(guild_id: int) -> list[discord.Embed]:
         "slash_help": get_message("commands.slash_help"),
         "slash_ping": get_message("commands.slash_ping"),
         "slash_gameplaza": get_message("commands.slash_gameplaza"),
+        "slash_sega_facebook": get_message("commands.slash_sega_facebook"),
     }
     embeds = [build_embed("server_help", **command_values)]
 

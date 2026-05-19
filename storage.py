@@ -10,6 +10,8 @@ def default_state() -> dict[str, Any]:
     return {
         "notreat_rules": {},
         "treat_allowed_guild_ids": [],
+        "sega_facebook_channels": {},
+        "sega_facebook_seen_post_ids": {},
     }
 
 
@@ -45,9 +47,33 @@ def load_state() -> dict[str, Any]:
             if guild_id.isdigit() and guild_id not in fixed_guild_ids:
                 fixed_guild_ids.append(guild_id)
 
+    facebook_channels = data.get("sega_facebook_channels", {})
+    fixed_facebook_channels: dict[str, str] = {}
+
+    if isinstance(facebook_channels, dict):
+        for guild_id, channel_id in facebook_channels.items():
+            guild_id_text = str(guild_id).strip()
+            channel_id_text = str(channel_id).strip()
+
+            if guild_id_text.isdigit() and channel_id_text.isdigit():
+                fixed_facebook_channels[guild_id_text] = channel_id_text
+
+    seen_post_ids = data.get("sega_facebook_seen_post_ids", {})
+    fixed_seen_post_ids: dict[str, str] = {}
+
+    if isinstance(seen_post_ids, dict):
+        for page_id, post_id in seen_post_ids.items():
+            page_id_text = str(page_id).strip()
+            post_id_text = str(post_id).strip()
+
+            if page_id_text and post_id_text:
+                fixed_seen_post_ids[page_id_text] = post_id_text
+
     return {
         "notreat_rules": fixed_rules,
         "treat_allowed_guild_ids": fixed_guild_ids,
+        "sega_facebook_channels": fixed_facebook_channels,
+        "sega_facebook_seen_post_ids": fixed_seen_post_ids,
     }
 
 
@@ -112,3 +138,38 @@ def remove_allowed_guild(guild_id: int) -> bool:
     guild_ids.remove(guild_id_text)
     save_state()
     return True
+
+
+def get_sega_facebook_channels() -> dict[str, str]:
+    channels = state.setdefault("sega_facebook_channels", {})
+    return dict(channels)
+
+
+def set_sega_facebook_channel(guild_id: int, channel_id: int) -> None:
+    channels = state.setdefault("sega_facebook_channels", {})
+    channels[str(guild_id)] = str(channel_id)
+    save_state()
+
+
+def remove_sega_facebook_channel(guild_id: int) -> bool:
+    channels = state.setdefault("sega_facebook_channels", {})
+    guild_id_text = str(guild_id)
+
+    if guild_id_text not in channels:
+        return False
+
+    del channels[guild_id_text]
+    save_state()
+    return True
+
+
+def get_sega_facebook_seen_post_id(page_id: str) -> str | None:
+    seen_post_ids = state.setdefault("sega_facebook_seen_post_ids", {})
+    value = seen_post_ids.get(page_id)
+    return str(value) if value else None
+
+
+def set_sega_facebook_seen_post_id(page_id: str, post_id: str) -> None:
+    seen_post_ids = state.setdefault("sega_facebook_seen_post_ids", {})
+    seen_post_ids[page_id] = post_id
+    save_state()

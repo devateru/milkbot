@@ -12,6 +12,7 @@ def default_state() -> dict[str, Any]:
         "treat_allowed_guild_ids": [],
         "sega_facebook_channels": {},
         "sega_facebook_seen_post_ids": {},
+        "random_song_presets": {},
     }
 
 
@@ -69,11 +70,39 @@ def load_state() -> dict[str, Any]:
             if page_id_text and post_id_text:
                 fixed_seen_post_ids[page_id_text] = post_id_text
 
+    random_song_presets = data.get("random_song_presets", {})
+    fixed_random_song_presets: dict[str, dict[str, object]] = {}
+
+    if isinstance(random_song_presets, dict):
+        allowed_keys = {
+            "game",
+            "min_level",
+            "genre",
+            "difficulty",
+            "chart_type",
+            "partner_level",
+        }
+
+        for uid, preset in random_song_presets.items():
+            if not isinstance(preset, dict):
+                continue
+
+            uid_text = str(uid).strip()
+            fixed_preset = {
+                key: value
+                for key, value in preset.items()
+                if key in allowed_keys and value is not None
+            }
+
+            if uid_text.isdigit() and fixed_preset:
+                fixed_random_song_presets[uid_text] = fixed_preset
+
     return {
         "notreat_rules": fixed_rules,
         "treat_allowed_guild_ids": fixed_guild_ids,
         "sega_facebook_channels": fixed_facebook_channels,
         "sega_facebook_seen_post_ids": fixed_seen_post_ids,
+        "random_song_presets": fixed_random_song_presets,
     }
 
 
@@ -173,3 +202,31 @@ def set_sega_facebook_seen_post_id(page_id: str, post_id: str) -> None:
     seen_post_ids = state.setdefault("sega_facebook_seen_post_ids", {})
     seen_post_ids[page_id] = post_id
     save_state()
+
+
+def get_random_song_preset(uid: int) -> dict[str, object]:
+    presets = state.setdefault("random_song_presets", {})
+    preset = presets.get(str(uid), {})
+    return dict(preset) if isinstance(preset, dict) else {}
+
+
+def set_random_song_preset(uid: int, preset: dict[str, object]) -> None:
+    presets = state.setdefault("random_song_presets", {})
+    presets[str(uid)] = {
+        key: value
+        for key, value in preset.items()
+        if value is not None
+    }
+    save_state()
+
+
+def remove_random_song_preset(uid: int) -> bool:
+    presets = state.setdefault("random_song_presets", {})
+    uid_text = str(uid)
+
+    if uid_text not in presets:
+        return False
+
+    del presets[uid_text]
+    save_state()
+    return True

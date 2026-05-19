@@ -8,7 +8,8 @@
     "gameplaza_live": "게임플라자가 지금 라이브 중입니다.",
     "gameplaza_offline": "현재 진행 중인 게임플라자 라이브가 없습니다.\n{url}",
     "gameplaza_error": "유튜브 라이브 상태를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.\n{url}",
-    "random_song_description": "국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다."
+    "random_song_description": "국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
+    "random_song_preset_description": "랜덤선곡 기본 옵션 프리셋을 저장하거나 삭제합니다."
   },
   "random_song": {
     "option_game": "maimai DX / CHUNITHM",
@@ -25,6 +26,10 @@
     "field_version": "수록 버전",
     "difficulty_value": "{difficulty} {level} ({constant})",
     "partner_embed_title": "2P 추천 보면",
+    "preset_applied": "적용된 랜덤선곡 프리셋: {preset}",
+    "preset_saved": "랜덤선곡 프리셋을 저장했습니다: {preset}",
+    "preset_cleared": "랜덤선곡 프리셋을 삭제했습니다.",
+    "preset_empty": "저장된 랜덤선곡 프리셋이 없습니다.",
     "error_unknown_difficulty": "알 수 없는 난이도예요: `{value}`",
     "error_unknown_type": "알 수 없는 유형이에요: `{value}`",
     "error_unknown_genre": "알 수 없는 장르예요: `{value}`",
@@ -73,6 +78,7 @@
     "slash_gameplaza": "`/겜플라이브` - 게임플라자 라이브 상태를 확인합니다.",
     "slash_sega_facebook": "`/세가페북` - maimai DX / CHUNITHM Facebook 새 게시물 알림을 관리합니다.",
     "slash_random_song": "`/랜덤선곡` - 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
+    "slash_random_song_preset": "`/랜덤선곡-프리셋` - 랜덤선곡 기본 옵션 프리셋을 저장하거나 삭제합니다.",
     "user_treat_list": "`!m treat` - 내 treat 목록을 확인합니다.",
     "user_treat_add": "`!m treat {treat}` - 내 treat을 추가합니다.",
     "user_treat_help": "`!m treat help` - treat 도움말 영상을 확인합니다.",
@@ -115,7 +121,7 @@
       "fields": [
         {
           "name": "슬래시 명령어",
-          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_sega_facebook}\n{slash_random_song}",
+          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_sega_facebook}\n{slash_random_song}\n{slash_random_song_preset}",
           "inline": false
         }
       ]

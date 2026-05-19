@@ -11,6 +11,7 @@ def build_server_help_embeds(guild_id: int) -> list[discord.Embed]:
         "slash_gameplaza": get_message("commands.slash_gameplaza"),
         "slash_sega_facebook": get_message("commands.slash_sega_facebook"),
         "slash_random_song": get_message("commands.slash_random_song"),
+        "slash_random_song_preset": get_message("commands.slash_random_song_preset"),
     }
     embeds = [build_embed("server_help", **command_values)]
 

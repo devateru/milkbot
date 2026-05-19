@@ -198,7 +198,7 @@ def build_post_embed(post: FacebookPost) -> discord.Embed:
 async def send_post_to_enabled_channels(client: discord.Client, post: FacebookPost) -> None:
     embed = build_post_embed(post)
 
-    for channel_id in get_sega_facebook_channels().values():
+    for channel_id in get_sega_facebook_channels():
         channel = client.get_channel(int(channel_id))
 
         if channel is None:

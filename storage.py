@@ -51,12 +51,12 @@ def load_state() -> dict[str, Any]:
     fixed_facebook_channels: dict[str, str] = {}
 
     if isinstance(facebook_channels, dict):
-        for guild_id, channel_id in facebook_channels.items():
-            guild_id_text = str(guild_id).strip()
+        for channel_id, guild_id in facebook_channels.items():
             channel_id_text = str(channel_id).strip()
+            guild_id_text = str(guild_id).strip()
 
             if guild_id_text.isdigit() and channel_id_text.isdigit():
-                fixed_facebook_channels[guild_id_text] = channel_id_text
+                fixed_facebook_channels[channel_id_text] = guild_id_text
 
     seen_post_ids = data.get("sega_facebook_seen_post_ids", {})
     fixed_seen_post_ids: dict[str, str] = {}
@@ -147,18 +147,18 @@ def get_sega_facebook_channels() -> dict[str, str]:
 
 def set_sega_facebook_channel(guild_id: int, channel_id: int) -> None:
     channels = state.setdefault("sega_facebook_channels", {})
-    channels[str(guild_id)] = str(channel_id)
+    channels[str(channel_id)] = str(guild_id)
     save_state()
 
 
-def remove_sega_facebook_channel(guild_id: int) -> bool:
+def remove_sega_facebook_channel(channel_id: int) -> bool:
     channels = state.setdefault("sega_facebook_channels", {})
-    guild_id_text = str(guild_id)
+    channel_id_text = str(channel_id)
 
-    if guild_id_text not in channels:
+    if channel_id_text not in channels:
         return False
 
-    del channels[guild_id_text]
+    del channels[channel_id_text]
     save_state()
     return True
 

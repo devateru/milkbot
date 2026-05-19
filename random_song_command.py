@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 
 from messages import get_message
-from random_song import GENRE_CHOICES, RandomSongError, choose_random_song
+from random_song import GENRE_CHOICES, RandomSongError, choose_random_song_response
 
 
 DIFFICULTY_SUGGESTIONS = [
@@ -19,7 +19,7 @@ DIFFICULTY_SUGGESTIONS = [
 
 TYPE_SUGGESTIONS = [
     ("STANDARD", "STANDARD"),
-    ("DELUXE", "DELUXE"),
+    ("DELUXE (maimai only)", "DELUXE"),
     ("UTAGE / WORLD'S END", "UTAGE/WORLD'S END"),
 ]
 
@@ -75,7 +75,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
         await interaction.response.defer(thinking=True)
 
         try:
-            embeds = await choose_random_song(
+            response = await choose_random_song_response(
                 game=game.value if game else "maimai",
                 min_level=min_level,
                 genre=genre.value if genre else None,
@@ -93,4 +93,4 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
             )
             return
 
-        await interaction.followup.send(embeds=embeds)
+        await interaction.followup.send(embeds=response.embeds, files=response.files)

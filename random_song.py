@@ -6,6 +6,7 @@ import re
 import urllib.request
 from asyncio import to_thread
 from dataclasses import dataclass
+from io import BytesIO
 from typing import Any
 
 import discord
@@ -23,7 +24,7 @@ DIFFICULTY_COLORS = {
     "advanced": 0xFB9C2D,
     "expert": 0xF64861,
     "master": 0x9E45E2,
-    "remaster": 0xBA67F8,
+    "remaster": 0xD78CFF,
     "ultima": 0x111111,
 }
 
@@ -138,6 +139,12 @@ class SongPick:
     partner_sheet: dict[str, Any] | None
     data_source_url: str
     update_time: str
+
+
+@dataclass(frozen=True)
+class RandomSongResponse:
+    embeds: list[discord.Embed]
+    files: list[discord.File]
 
 
 def _normalize_compact(value: str) -> str:
@@ -345,6 +352,23 @@ def _cover_url(pick: SongPick) -> str | None:
     return f"{pick.data_source_url}/img/cover/{image_name}"
 
 
+async def _cover_file(pick: SongPick) -> discord.File | None:
+    cover_url = _cover_url(pick)
+    if cover_url is None:
+        return None
+
+    def load_cover() -> discord.File:
+        with urllib.request.urlopen(cover_url, timeout=15) as response:
+            data = response.read()
+
+        return discord.File(BytesIO(data), filename="random_song_cover.png")
+
+    try:
+        return await to_thread(load_cover)
+    except Exception:
+        return None
+
+
 def _version(song: dict[str, Any], sheet: dict[str, Any]) -> str:
     intl_override = sheet.get("regionOverrides", {}).get("intl", {})
     return intl_override.get("version") or sheet.get("version") or song.get("version") or "-"
@@ -431,6 +455,53 @@ async def choose_random_song(
     chart_type: str | None,
     partner_level: float | None,
 ) -> list[discord.Embed]:
+    pick = await choose_random_song_pick(
+        game=game,
+        min_level=min_level,
+        genre=genre,
+        difficulty=difficulty,
+        chart_type=chart_type,
+        partner_level=partner_level,
+    )
+    return build_song_embeds(pick)
+
+
+async def choose_random_song_response(
+    *,
+    game: str,
+    min_level: float,
+    genre: str | None,
+    difficulty: str | None,
+    chart_type: str | None,
+    partner_level: float | None,
+) -> RandomSongResponse:
+    pick = await choose_random_song_pick(
+        game=game,
+        min_level=min_level,
+        genre=genre,
+        difficulty=difficulty,
+        chart_type=chart_type,
+        partner_level=partner_level,
+    )
+    embeds = build_song_embeds(pick)
+    cover_file = await _cover_file(pick)
+
+    if cover_file is not None:
+        embeds[0].set_image(url=f"attachment://{cover_file.filename}")
+        return RandomSongResponse(embeds=embeds, files=[cover_file])
+
+    return RandomSongResponse(embeds=embeds, files=[])
+
+
+async def choose_random_song_pick(
+    *,
+    game: str,
+    min_level: float,
+    genre: str | None,
+    difficulty: str | None,
+    chart_type: str | None,
+    partner_level: float | None,
+) -> SongPick:
     if game not in DATA_SOURCES:
         raise RandomSongError(get_message("random_song.error_invalid_game"))
 
@@ -451,4 +522,4 @@ async def choose_random_song(
         partner_min_level=partner_min_level,
         partner_max_level=partner_max_level,
     )
-    return build_song_embeds(pick)
+    return pick

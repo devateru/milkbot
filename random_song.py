@@ -28,6 +28,11 @@ GAME_SEARCH_LABELS = {
 MAIMAI_NEW_VERSIONS = {"PRiSM PLUS", "CiRCLE", "CiRCLE PLUS"}
 CHUNITHM_NEW_VERSIONS = {"X-VERSE-X"}
 
+LEVEL_SCALE_MAX = {
+    "maimai": 15.0,
+    "chunithm": 15.5,
+}
+
 DIFFICULTY_COLORS = {
     "basic": 0x22BB5B,
     "advanced": 0xFB9C2D,
@@ -365,18 +370,26 @@ def _find_partner_sheet(
     return random.choice(candidates) if candidates else None
 
 
-def _level_probabilities(levels: list[float]) -> dict[float, float]:
+def _level_probabilities(
+    levels: list[float],
+    *,
+    game: str,
+    min_level: float | None,
+) -> dict[float, float]:
     unique_levels = sorted(set(levels))
     if not unique_levels:
         raise RandomSongError(get_message("random_song.error_no_matches"))
 
-    max_rank = len(unique_levels) - 1
+    scale_min = min_level if min_level is not None else unique_levels[0]
+    scale_max = max(LEVEL_SCALE_MAX.get(game, unique_levels[-1]), unique_levels[-1])
     weights_by_level: dict[float, float] = {}
-    for rank, level in enumerate(unique_levels):
-        distance = rank + 1
-        weight = 1 / (distance**1.35)
-        if rank == max_rank:
-            weight *= 1.8
+    for level in unique_levels:
+        if scale_max <= scale_min:
+            x = 1.0
+        else:
+            position = (level - scale_min) / (scale_max - scale_min)
+            x = 0.1 + max(0.0, min(position, 1.0)) * 9.9
+        weight = 1 / x
         weights_by_level[level] = weight
 
     weight_sum = sum(weights_by_level.values())
@@ -385,19 +398,24 @@ def _level_probabilities(levels: list[float]) -> dict[float, float]:
         for level, weight in weights_by_level.items()
     }
 
-    if len(unique_levels) >= 3:
-        top_levels = unique_levels[-min(5, len(unique_levels)):]
-        top_bonus = 0.035 / len(top_levels)
+    if game == "maimai" and 15.0 in probabilities and probabilities[15.0] < 0.01:
+        remaining_probability = 0.99
+        other_probability_sum = 1 - probabilities[15.0]
         probabilities = {
-            level: probability * 0.965 + (top_bonus if level in top_levels else 0)
+            level: 0.01 if level == 15.0 else probability / other_probability_sum * remaining_probability
             for level, probability in probabilities.items()
         }
 
     return probabilities
 
 
-def _choose_level(levels: list[float]) -> tuple[float, float]:
-    probabilities = _level_probabilities(levels)
+def _choose_level(
+    levels: list[float],
+    *,
+    game: str,
+    min_level: float | None,
+) -> tuple[float, float]:
+    probabilities = _level_probabilities(levels, game=game, min_level=min_level)
     selected_level = random.choices(
         list(probabilities.keys()),
         weights=list(probabilities.values()),
@@ -460,32 +478,14 @@ def pick_random_song(
 
             candidates_by_level.setdefault(level, []).append((song, sheet, partner_sheet))
 
-    if min_level is None and max_level is None:
-        all_candidates = [
-            candidate
-            for candidates in candidates_by_level.values()
-            for candidate in candidates
-        ]
-        if not all_candidates:
-            raise RandomSongError(get_message("random_song.error_no_matches"))
-
-        song, sheet, partner_sheet = random.choice(all_candidates)
-        return SongPick(
-            game=game,
-            song=song,
-            sheet=sheet,
-            partner_sheet=partner_sheet,
-            data_source_url=DATA_SOURCES[game],
-            update_time=data.get("updateTime", ""),
-            requested_level=min_level,
-            max_level=max_level,
-            selected_level_probability=1 / len(all_candidates),
-        )
-
     if max_level is not None:
         selected_level, selected_probability = _choose_uniform_level(list(candidates_by_level))
     else:
-        selected_level, selected_probability = _choose_level(list(candidates_by_level))
+        selected_level, selected_probability = _choose_level(
+            list(candidates_by_level),
+            game=game,
+            min_level=min_level,
+        )
     song, sheet, partner_sheet = random.choice(candidates_by_level[selected_level])
     return SongPick(
         game=game,

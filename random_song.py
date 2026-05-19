@@ -149,6 +149,7 @@ class SongPick:
     data_source_url: str
     update_time: str
     requested_level: float
+    max_level: float | None
     selected_level_probability: float
 
 
@@ -428,6 +429,7 @@ def pick_random_song(
         data_source_url=DATA_SOURCES[game],
         update_time=data.get("updateTime", ""),
         requested_level=min_level,
+        max_level=max_level,
         selected_level_probability=selected_probability,
     )
 
@@ -467,11 +469,20 @@ def _youtube_search_url(pick: SongPick) -> str:
     query = " ".join(
         [
             GAME_SEARCH_LABELS[pick.game],
-            _field_value(pick.song.get("title")),
+            _youtube_search_title(pick.song.get("title")),
             DIFFICULTY_LABELS.get(difficulty, _field_value(pick.sheet.get("difficulty"))),
         ]
     )
     return "https://www.youtube.com/results?" + urllib.parse.urlencode({"search_query": query})
+
+
+def _youtube_search_title(value: Any) -> str:
+    title = _field_value(value).strip()
+
+    while len(title) >= 2 and title[-1] == title[-2] and not title[-1].isalnum():
+        title = title[:-1]
+
+    return title
 
 
 def _format_probability(value: float) -> str:
@@ -532,7 +543,7 @@ def _build_primary_embed(pick: SongPick) -> discord.Embed:
         embed.set_image(url=cover_url)
 
     selected_level = _chart_level(sheet)
-    if selected_level is not None and selected_level > pick.requested_level:
+    if selected_level is not None and pick.max_level is None and selected_level > pick.requested_level:
         embed.set_footer(
             text=get_message(
                 "random_song.higher_level_footer",

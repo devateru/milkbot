@@ -51,37 +51,67 @@ HIGH_DIFFICULTIES = {
     "chunithm": "ultima",
 }
 
-GENRE_CHOICES = {
+MAIMAI_GENRE_CHOICES = {
     "pops": {
         "label": "POPS & ANIME",
-        "maimai": {"POPS＆アニメ"},
-        "chunithm": {"POPS & ANIME"},
+        "categories": {"POPS＆アニメ"},
     },
     "niconico": {
         "label": "niconico & VOCALOID",
-        "maimai": {"niconico＆ボーカロイド"},
-        "chunithm": {"niconico"},
+        "categories": {"niconico＆ボーカロイド"},
     },
     "touhou": {
         "label": "東方Project",
-        "maimai": {"東方Project"},
-        "chunithm": {"東方Project"},
+        "categories": {"東方Project"},
     },
     "variety": {
         "label": "GAME & VARIETY",
-        "maimai": {"ゲーム＆バラエティ"},
-        "chunithm": {"VARIETY"},
+        "categories": {"ゲーム＆バラエティ"},
+    },
+    "original": {
+        "label": "maimai",
+        "categories": {"maimai"},
+    },
+    "gekimai": {
+        "label": "ONGEKI & CHUNITHM",
+        "categories": {"オンゲキ＆CHUNITHM"},
+    },
+}
+
+CHUNITHM_GENRE_CHOICES = {
+    "pops": {
+        "label": "POPS & ANIME",
+        "categories": {"POPS & ANIME"},
+    },
+    "niconico": {
+        "label": "niconico",
+        "categories": {"niconico"},
+    },
+    "touhou": {
+        "label": "東方Project",
+        "categories": {"東方Project"},
+    },
+    "variety": {
+        "label": "VARIETY",
+        "categories": {"VARIETY"},
     },
     "original": {
         "label": "ORIGINAL",
-        "maimai": {"maimai"},
-        "chunithm": {"ORIGINAL", "イロドリミドリ"},
+        "categories": {"ORIGINAL"},
+    },
+    "irodorimidori": {
+        "label": "イロドリミドリ",
+        "categories": {"イロドリミドリ"},
     },
     "gekimai": {
-        "label": "GEKICHUMAI",
-        "maimai": {"オンゲキ＆CHUNITHM"},
-        "chunithm": {"ゲキマイ"},
+        "label": "ゲキマイ",
+        "categories": {"ゲキマイ"},
     },
+}
+
+GENRE_CHOICES_BY_GAME = {
+    "maimai": MAIMAI_GENRE_CHOICES,
+    "chunithm": CHUNITHM_GENRE_CHOICES,
 }
 
 DIFFICULTY_ALIASES = {
@@ -114,9 +144,21 @@ DIFFICULTY_CHOICE_ALIASES = {
     "master": ("master",),
     "remasterultima": ("high",),
     "remasult": ("high",),
+    "remaster": ("high",),
+    "re:master": ("high",),
+    "ultima": ("high",),
+    "ult": ("high",),
     "mas~remasult": ("master", "high"),
+    "mas~remas": ("master", "high"),
+    "mas~remaster": ("master", "high"),
+    "mas~ult": ("master", "high"),
+    "mas~ultima": ("master", "high"),
     "master~remasterultima": ("master", "high"),
     "exp~remasult": ("expert", "master", "high"),
+    "exp~remas": ("expert", "master", "high"),
+    "exp~remaster": ("expert", "master", "high"),
+    "exp~ult": ("expert", "master", "high"),
+    "exp~ultima": ("expert", "master", "high"),
     "expert~remasterultima": ("expert", "master", "high"),
 }
 
@@ -222,12 +264,10 @@ def parse_types(value: str | None, game: str) -> set[str] | None:
 
 def parse_version_filter(
     game: str,
-    maimai_version: str | None,
-    chunithm_version: str | None,
+    version: str | None,
     data: dict[str, Any],
 ) -> set[str] | None:
-    selected_version = maimai_version if game == "maimai" else chunithm_version
-    if not selected_version:
+    if not version:
         return None
 
     versions = {
@@ -237,20 +277,20 @@ def parse_version_filter(
     }
 
     if game == "maimai":
-        if selected_version == "new":
+        if version == "new":
             return MAIMAI_NEW_VERSIONS & versions
-        if selected_version == "old":
+        if version == "old":
             return versions - MAIMAI_NEW_VERSIONS
     else:
-        if selected_version == "new":
+        if version == "new":
             return CHUNITHM_NEW_VERSIONS & versions
-        if selected_version == "old":
+        if version == "old":
             return versions - CHUNITHM_NEW_VERSIONS
 
-    if selected_version in versions:
-        return {selected_version}
+    if version in versions:
+        return {version}
 
-    raise RandomSongError(get_message("random_song.error_unknown_version", value=selected_version))
+    raise RandomSongError(get_message("random_song.error_unknown_version", value=version))
 
 
 def selected_type_for_default() -> set[str]:
@@ -287,11 +327,11 @@ def _matches_genre(song: dict[str, Any], game: str, genre: str | None) -> bool:
     if not genre:
         return True
 
-    genre_config = GENRE_CHOICES.get(genre)
+    genre_config = GENRE_CHOICES_BY_GAME.get(game, {}).get(genre)
     if genre_config is None:
         raise RandomSongError(get_message("random_song.error_unknown_genre", value=genre))
 
-    return _song_category(song) in genre_config[game]
+    return _song_category(song) in genre_config["categories"]
 
 
 def _matches_type(sheet: dict[str, Any], allowed_types: set[str]) -> bool:
@@ -376,7 +416,6 @@ def pick_random_song(
     game: str,
     min_level: float,
     max_level: float | None,
-    level_fixed: bool,
     genre: str | None,
     difficulties: set[str],
     chart_types: set[str],
@@ -399,8 +438,6 @@ def pick_random_song(
                 continue
             if max_level is not None and level > max_level:
                 continue
-            if level_fixed and abs(level - min_level) > 0.0001:
-                continue
             if not _is_intl(sheet):
                 continue
             if not _matches_type(sheet, chart_types):
@@ -416,7 +453,7 @@ def pick_random_song(
 
             candidates_by_level.setdefault(level, []).append((song, sheet, partner_sheet))
 
-    if max_level is not None and not level_fixed:
+    if max_level is not None:
         selected_level, selected_probability = _choose_uniform_level(list(candidates_by_level))
     else:
         selected_level, selected_probability = _choose_level(list(candidates_by_level))
@@ -584,9 +621,7 @@ async def choose_random_song(
     genre: str | None,
     difficulty: str | None,
     chart_type: str | None,
-    maimai_version: str | None,
-    chunithm_version: str | None,
-    level_fixed: bool,
+    version: str | None,
     partner_level: float | None,
 ) -> list[discord.Embed]:
     pick = await choose_random_song_pick(
@@ -596,9 +631,7 @@ async def choose_random_song(
         genre=genre,
         difficulty=difficulty,
         chart_type=chart_type,
-        maimai_version=maimai_version,
-        chunithm_version=chunithm_version,
-        level_fixed=level_fixed,
+        version=version,
         partner_level=partner_level,
     )
     return build_song_embeds(pick)
@@ -612,9 +645,7 @@ async def choose_random_song_response(
     genre: str | None,
     difficulty: str | None,
     chart_type: str | None,
-    maimai_version: str | None,
-    chunithm_version: str | None,
-    level_fixed: bool,
+    version: str | None,
     partner_level: float | None,
 ) -> RandomSongResponse:
     pick = await choose_random_song_pick(
@@ -624,9 +655,7 @@ async def choose_random_song_response(
         genre=genre,
         difficulty=difficulty,
         chart_type=chart_type,
-        maimai_version=maimai_version,
-        chunithm_version=chunithm_version,
-        level_fixed=level_fixed,
+        version=version,
         partner_level=partner_level,
     )
     embeds = build_song_embeds(pick)
@@ -647,9 +676,7 @@ async def choose_random_song_pick(
     genre: str | None,
     difficulty: str | None,
     chart_type: str | None,
-    maimai_version: str | None,
-    chunithm_version: str | None,
-    level_fixed: bool,
+    version: str | None,
     partner_level: float | None,
 ) -> SongPick:
     if game not in DATA_SOURCES:
@@ -661,14 +688,13 @@ async def choose_random_song_pick(
     difficulties = parse_difficulties(difficulty, game)
     chart_types = parse_types(chart_type, game) or selected_type_for_default()
     data = await fetch_game_data(game)
-    version_filter = parse_version_filter(game, maimai_version, chunithm_version, data)
+    version_filter = parse_version_filter(game, version, data)
 
     pick = pick_random_song(
         data,
         game=game,
         min_level=min_level,
         max_level=max_level,
-        level_fixed=level_fixed,
         genre=genre,
         difficulties=difficulties,
         chart_types=chart_types,

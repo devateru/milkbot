@@ -8,19 +8,17 @@
     "gameplaza_live": "게임플라자가 지금 라이브 중입니다.",
     "gameplaza_offline": "현재 진행 중인 게임플라자 라이브가 없습니다.\n{url}",
     "gameplaza_error": "유튜브 라이브 상태를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.\n{url}",
-    "random_song_description": "국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
-    "random_song_preset_description": "랜덤선곡 기본 옵션 프리셋을 저장하거나 삭제합니다."
+    "maimai_song_description": "maimai DX 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
+    "chunithm_song_description": "CHUNITHM 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
+    "maimai_song_preset_description": "마이선곡 기본 옵션 프리셋을 저장하거나 삭제합니다.",
+    "chunithm_song_preset_description": "츄니선곡 기본 옵션 프리셋을 저장하거나 삭제합니다."
   },
   "random_song": {
-    "option_game": "maimai DX / CHUNITHM",
     "option_min_level": "이 보면상수 이상에서 선곡합니다.",
     "option_max_level": "이 보면상수 이하에서 선곡합니다. 입력하면 범위 안에서 균등 랜덤으로 뽑습니다.",
-    "option_genre": "게임별 장르를 maimai 기준으로 통합한 필터입니다.",
-    "option_difficulty": "BASIC, ADVANCED, EXPERT, MASTER, RE:MASTER/ULTIMA, MAS~RE:MAS/ULT, EXP~RE:MAS/ULT 중 선택.",
-    "option_chart_type": "STANDARD, DELUXE, UTAGE/WORLD'S END 중 선택.",
-    "option_maimai_version": "maimai 버전 필터입니다. CHUNITHM에서는 무시됩니다.",
-    "option_chunithm_version": "CHUNITHM 버전 필터입니다. maimai에서는 무시됩니다.",
-    "option_level_fixed": "TRUE면 최소 보면상수와 같은 보면상수 안에서만 선곡합니다.",
+    "option_genre": "장르 폴더 필터입니다.",
+    "option_maimai_version": "maimai 버전 필터입니다.",
+    "option_chunithm_version": "CHUNITHM 버전 필터입니다.",
     "option_partner_level": "2P용 기준 보면상수. 기준값 -0.5부터 +1.0까지 함께 찾습니다.",
     "field_genre": "장르",
     "field_bpm": "BPM",
@@ -33,16 +31,20 @@
     "partner_embed_title": "2P 추천 보면",
     "recommendation_text": "밀크봇의 {game} 추천곡이에요!",
     "preset_applied": "(프리셋: {preset})",
-    "preset_saved": "랜덤선곡 프리셋을 저장했습니다: {preset}",
-    "preset_cleared": "랜덤선곡 프리셋을 삭제했습니다.",
-    "preset_empty": "저장된 랜덤선곡 프리셋이 없습니다.",
+    "preset_saved": "선곡 프리셋을 저장했습니다: {preset}",
+    "preset_cleared": "선곡 프리셋을 삭제했습니다.",
+    "preset_empty": "저장된 선곡 프리셋이 없습니다.",
     "error_unknown_difficulty": "알 수 없는 난이도예요: `{value}`",
     "error_unknown_type": "알 수 없는 유형이에요: `{value}`",
     "error_unknown_genre": "알 수 없는 장르예요: `{value}`",
     "error_unknown_version": "알 수 없는 버전이에요: `{value}`",
     "error_no_matches": "조건에 맞는 보면이 없어요.",
     "error_invalid_game": "게임은 `maimai DX` 또는 `CHUNITHM`만 가능해요.",
-    "error_fetch_failed": "arcade-songs 데이터를 가져오는 중 문제가 생겼어요. 잠시 뒤 다시 시도해줘요."
+    "error_fetch_failed": "arcade-songs 데이터를 가져오는 중 문제가 생겼어요. 잠시 뒤 다시 시도해줘요.",
+    "option_maimai_difficulty": "BASIC, ADVANCED, EXPERT, MASTER, RE:MASTER, MAS~RE:MAS, EXP~RE:MAS 중 선택.",
+    "option_chunithm_difficulty": "BASIC, ADVANCED, EXPERT, MASTER, ULTIMA, MAS~ULT, EXP~ULT 중 선택.",
+    "option_maimai_chart_type": "STANDARD, DELUXE, UTAGE 중 선택.",
+    "option_chunithm_chart_type": "STANDARD, WORLD'S END 중 선택."
   },
   "treat": {
     "empty_list": "등록된 treat이 없습니다.",
@@ -84,8 +86,10 @@
     "slash_ping": "`/ping` - 밀크봇이 응답하는지 확인합니다.",
     "slash_gameplaza": "`/겜플라이브` - 게임플라자 라이브 상태를 확인합니다.",
     "slash_sega_facebook": "`/세가페북` - maimai DX / CHUNITHM Facebook 새 게시물 알림을 관리합니다.",
-    "slash_random_song": "`/랜덤선곡` - 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
-    "slash_random_song_preset": "`/랜덤선곡-프리셋` - 랜덤선곡 기본 옵션 프리셋을 저장하거나 삭제합니다.",
+    "slash_maimai_song": "`/마이선곡` - maimai DX 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
+    "slash_chunithm_song": "`/츄니선곡` - CHUNITHM 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
+    "slash_maimai_song_preset": "`/마이선곡-프리셋` - 마이선곡 기본 옵션 프리셋을 저장하거나 삭제합니다.",
+    "slash_chunithm_song_preset": "`/츄니선곡-프리셋` - 츄니선곡 기본 옵션 프리셋을 저장하거나 삭제합니다.",
     "user_treat_list": "`!m treat` - 내 treat 목록을 확인합니다.",
     "user_treat_add": "`!m treat {treat}` - 내 treat을 추가합니다.",
     "user_treat_help": "`!m treat help` - treat 도움말 영상을 확인합니다.",
@@ -128,7 +132,7 @@
       "fields": [
         {
           "name": "슬래시 명령어",
-          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_sega_facebook}\n{slash_random_song}\n{slash_random_song_preset}",
+          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_sega_facebook}\n{slash_maimai_song}\n{slash_chunithm_song}\n{slash_maimai_song_preset}\n{slash_chunithm_song_preset}",
           "inline": false
         }
       ]

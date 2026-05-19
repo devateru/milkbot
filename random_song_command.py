@@ -4,7 +4,12 @@ import discord
 from discord import app_commands
 
 from messages import get_message
-from random_song import GENRE_CHOICES, RandomSongError, choose_random_song_response
+from random_song import (
+    CHUNITHM_GENRE_CHOICES,
+    MAIMAI_GENRE_CHOICES,
+    RandomSongError,
+    choose_random_song_response,
+)
 from storage import (
     get_random_song_preset,
     remove_random_song_preset,
@@ -12,40 +17,35 @@ from storage import (
 )
 
 
-DIFFICULTY_SUGGESTIONS = [
+MAIMAI_DIFFICULTY_SUGGESTIONS = [
     ("BASIC", "BASIC"),
     ("ADVANCED", "ADVANCED"),
     ("EXPERT", "EXPERT"),
     ("MASTER", "MASTER"),
-    ("RE:MASTER / ULTIMA", "RE:MASTER/ULTIMA"),
-    ("MAS ~ RE:MAS / ULT", "MAS~RE:MAS/ULT"),
-    ("EXP ~ RE:MAS / ULT", "EXP~RE:MAS/ULT"),
+    ("RE:MASTER", "RE:MASTER"),
+    ("MAS ~ RE:MAS", "MAS~RE:MAS"),
+    ("EXP ~ RE:MAS", "EXP~RE:MAS"),
 ]
 
-TYPE_SUGGESTIONS = [
+CHUNITHM_DIFFICULTY_SUGGESTIONS = [
+    ("BASIC", "BASIC"),
+    ("ADVANCED", "ADVANCED"),
+    ("EXPERT", "EXPERT"),
+    ("MASTER", "MASTER"),
+    ("ULTIMA", "ULTIMA"),
+    ("MAS ~ ULT", "MAS~ULT"),
+    ("EXP ~ ULT", "EXP~ULT"),
+]
+
+MAIMAI_TYPE_SUGGESTIONS = [
     ("STANDARD", "STANDARD"),
-    ("DELUXE (maimai only)", "DELUXE"),
-    ("UTAGE / WORLD'S END", "UTAGE/WORLD'S END"),
+    ("DELUXE", "DELUXE"),
+    ("UTAGE", "UTAGE/WORLD'S END"),
 ]
 
-GAME_CHOICES = [
-    app_commands.Choice(name="maimai DX", value="maimai"),
-    app_commands.Choice(name="CHUNITHM", value="chunithm"),
-]
-
-GENRE_APP_CHOICES = [
-    app_commands.Choice(name=config["label"], value=genre_key)
-    for genre_key, config in GENRE_CHOICES.items()
-]
-
-DIFFICULTY_CHOICES = [
-    app_commands.Choice(name=name, value=value)
-    for name, value in DIFFICULTY_SUGGESTIONS
-]
-
-TYPE_CHOICES = [
-    app_commands.Choice(name=name, value=value)
-    for name, value in TYPE_SUGGESTIONS
+CHUNITHM_TYPE_SUGGESTIONS = [
+    ("STANDARD", "STANDARD"),
+    ("WORLD'S END", "UTAGE/WORLD'S END"),
 ]
 
 MAIMAI_VERSION_SUGGESTIONS = [
@@ -82,7 +82,7 @@ MAIMAI_VERSION_SUGGESTIONS = [
 
 CHUNITHM_VERSION_SUGGESTIONS = [
     ("신곡 (X-VERSE-X)", "new"),
-    ("구곡 (X-VERSE-X 제외)", "old"),
+    ("구곡 (~X-VERSE)", "old"),
     ("CHUNITHM", "CHUNITHM"),
     ("CHUNITHM PLUS", "CHUNITHM PLUS"),
     ("AIR", "AIR"),
@@ -106,14 +106,28 @@ CHUNITHM_VERSION_SUGGESTIONS = [
     ("X-VERSE-X", "X-VERSE-X"),
 ]
 
-MAIMAI_VERSION_CHOICES = [
-    app_commands.Choice(name=name, value=value)
-    for name, value in MAIMAI_VERSION_SUGGESTIONS
+
+def _choices(suggestions: list[tuple[str, str]]) -> list[app_commands.Choice[str]]:
+    return [
+        app_commands.Choice(name=name, value=value)
+        for name, value in suggestions
+    ]
+
+
+MAIMAI_GENRE_APP_CHOICES = [
+    app_commands.Choice(name=config["label"], value=genre_key)
+    for genre_key, config in MAIMAI_GENRE_CHOICES.items()
 ]
-CHUNITHM_VERSION_CHOICES = [
-    app_commands.Choice(name=name, value=value)
-    for name, value in CHUNITHM_VERSION_SUGGESTIONS
+CHUNITHM_GENRE_APP_CHOICES = [
+    app_commands.Choice(name=config["label"], value=genre_key)
+    for genre_key, config in CHUNITHM_GENRE_CHOICES.items()
 ]
+MAIMAI_DIFFICULTY_CHOICES = _choices(MAIMAI_DIFFICULTY_SUGGESTIONS)
+CHUNITHM_DIFFICULTY_CHOICES = _choices(CHUNITHM_DIFFICULTY_SUGGESTIONS)
+MAIMAI_TYPE_CHOICES = _choices(MAIMAI_TYPE_SUGGESTIONS)
+CHUNITHM_TYPE_CHOICES = _choices(CHUNITHM_TYPE_SUGGESTIONS)
+MAIMAI_VERSION_CHOICES = _choices(MAIMAI_VERSION_SUGGESTIONS)
+CHUNITHM_VERSION_CHOICES = _choices(CHUNITHM_VERSION_SUGGESTIONS)
 
 
 def _matches_current_input(current: str, name: str, value: str) -> bool:
@@ -151,41 +165,56 @@ def _choice_name(choices: list[app_commands.Choice[str]], value: object) -> str:
     return str(value)
 
 
-def _preset_summary(preset: dict[str, object], *, include_game: bool = True) -> str:
+def _preset_summary(
+    preset: dict[str, object],
+    *,
+    genre_choices: list[app_commands.Choice[str]],
+    difficulty_choices: list[app_commands.Choice[str]],
+    type_choices: list[app_commands.Choice[str]],
+    version_choices: list[app_commands.Choice[str]],
+) -> str:
     parts: list[str] = []
 
-    if include_game and "game" in preset:
-        parts.append(f"게임={_choice_name(GAME_CHOICES, preset['game'])}")
     if "min_level" in preset:
         parts.append(f"최소 보면상수={preset['min_level']}")
     if "max_level" in preset:
         parts.append(f"최대 보면상수={preset['max_level']}")
     if "genre" in preset:
-        parts.append(f"장르={_choice_name(GENRE_APP_CHOICES, preset['genre'])}")
+        parts.append(f"장르={_choice_name(genre_choices, preset['genre'])}")
     if "difficulty" in preset:
-        parts.append(f"난이도={_choice_name(DIFFICULTY_CHOICES, preset['difficulty'])}")
+        parts.append(f"난이도={_choice_name(difficulty_choices, preset['difficulty'])}")
     if "chart_type" in preset:
-        parts.append(f"유형={_choice_name(TYPE_CHOICES, preset['chart_type'])}")
-    if "maimai_version" in preset:
-        parts.append(f"마이버전={_choice_name(MAIMAI_VERSION_CHOICES, preset['maimai_version'])}")
-    if "chunithm_version" in preset:
-        parts.append(f"츄니버전={_choice_name(CHUNITHM_VERSION_CHOICES, preset['chunithm_version'])}")
-    if "level_fixed" in preset:
-        parts.append(f"난이도 고정={preset['level_fixed']}")
+        parts.append(f"유형={_choice_name(type_choices, preset['chart_type'])}")
+    if "version" in preset:
+        parts.append(f"버전={_choice_name(version_choices, preset['version'])}")
     if "partner_level" in preset:
         parts.append(f"2P 난이도={preset['partner_level']}")
 
     return ", ".join(parts)
 
 
-def _recommendation_content(game: object, applied_preset: dict[str, object]) -> str:
+def _recommendation_content(
+    game_label: str,
+    applied_preset: dict[str, object],
+    *,
+    genre_choices: list[app_commands.Choice[str]],
+    difficulty_choices: list[app_commands.Choice[str]],
+    type_choices: list[app_commands.Choice[str]],
+    version_choices: list[app_commands.Choice[str]],
+) -> str:
     lines = [
         get_message(
             "random_song.recommendation_text",
-            game=_choice_name(GAME_CHOICES, game),
+            game=game_label,
         )
     ]
-    preset_summary = _preset_summary(applied_preset, include_game=False)
+    preset_summary = _preset_summary(
+        applied_preset,
+        genre_choices=genre_choices,
+        difficulty_choices=difficulty_choices,
+        type_choices=type_choices,
+        version_choices=version_choices,
+    )
 
     if preset_summary:
         lines.append(
@@ -199,27 +228,21 @@ def _recommendation_content(game: object, applied_preset: dict[str, object]) -> 
 
 
 def _random_song_options(
-    game: app_commands.Choice[str] | None,
     min_level: float | None,
     max_level: float | None,
     genre: app_commands.Choice[str] | None,
     difficulty: app_commands.Choice[str] | None,
     chart_type: app_commands.Choice[str] | None,
-    maimai_version: str | None,
-    chunithm_version: str | None,
-    level_fixed: bool | None,
+    version: str | None,
     partner_level: float | None,
 ) -> dict[str, object]:
     return {
-        "game": game.value if game else None,
         "min_level": min_level,
         "max_level": max_level,
         "genre": genre.value if genre else None,
         "difficulty": difficulty.value if difficulty else None,
         "chart_type": chart_type.value if chart_type else None,
-        "maimai_version": maimai_version,
-        "chunithm_version": chunithm_version,
-        "level_fixed": level_fixed,
+        "version": version,
         "partner_level": partner_level,
     }
 
@@ -233,204 +256,306 @@ def _compact_options(options: dict[str, object]) -> dict[str, object]:
 
 
 def _merge_with_preset(
+    game: str,
     uid: int,
     options: dict[str, object],
 ) -> tuple[dict[str, object], dict[str, object]]:
-    preset = get_random_song_preset(uid)
+    preset = get_random_song_preset(game, uid)
     applied_preset = {
         key: value
         for key, value in preset.items()
         if options.get(key) is None
     }
     merged = {
-        "game": options.get("game") or preset.get("game") or "maimai",
         "min_level": options.get("min_level") if options.get("min_level") is not None else preset.get("min_level", 1.0),
         "max_level": options.get("max_level") if options.get("max_level") is not None else preset.get("max_level"),
         "genre": options.get("genre") if options.get("genre") is not None else preset.get("genre"),
         "difficulty": options.get("difficulty") if options.get("difficulty") is not None else preset.get("difficulty"),
         "chart_type": options.get("chart_type") if options.get("chart_type") is not None else preset.get("chart_type"),
-        "maimai_version": options.get("maimai_version") if options.get("maimai_version") is not None else preset.get("maimai_version"),
-        "chunithm_version": options.get("chunithm_version") if options.get("chunithm_version") is not None else preset.get("chunithm_version"),
-        "level_fixed": options.get("level_fixed") if options.get("level_fixed") is not None else preset.get("level_fixed", False),
+        "version": options.get("version") if options.get("version") is not None else preset.get("version"),
         "partner_level": options.get("partner_level") if options.get("partner_level") is not None else preset.get("partner_level"),
     }
 
     return merged, applied_preset
 
 
+async def _send_random_song(
+    interaction: discord.Interaction,
+    *,
+    game: str,
+    game_label: str,
+    options: dict[str, object],
+    genre_choices: list[app_commands.Choice[str]],
+    difficulty_choices: list[app_commands.Choice[str]],
+    type_choices: list[app_commands.Choice[str]],
+    version_choices: list[app_commands.Choice[str]],
+) -> None:
+    await interaction.response.defer(thinking=True)
+    merged_options, applied_preset = _merge_with_preset(game, interaction.user.id, options)
+
+    try:
+        response = await choose_random_song_response(
+            game=game,
+            min_level=float(merged_options["min_level"]),
+            max_level=float(merged_options["max_level"]) if merged_options.get("max_level") is not None else None,
+            genre=str(merged_options["genre"]) if merged_options.get("genre") is not None else None,
+            difficulty=str(merged_options["difficulty"]) if merged_options.get("difficulty") is not None else None,
+            chart_type=str(merged_options["chart_type"]) if merged_options.get("chart_type") is not None else None,
+            version=str(merged_options["version"]) if merged_options.get("version") is not None else None,
+            partner_level=float(merged_options["partner_level"]) if merged_options.get("partner_level") is not None else None,
+        )
+    except RandomSongError as exc:
+        await interaction.followup.send(str(exc), ephemeral=True)
+        return
+    except Exception:
+        await interaction.followup.send(
+            get_message("random_song.error_fetch_failed"),
+            ephemeral=True,
+        )
+        return
+
+    await interaction.followup.send(
+        content=_recommendation_content(
+            game_label,
+            applied_preset,
+            genre_choices=genre_choices,
+            difficulty_choices=difficulty_choices,
+            type_choices=type_choices,
+            version_choices=version_choices,
+        ),
+        embeds=response.embeds,
+        files=response.files,
+    )
+
+
+async def _save_preset(
+    interaction: discord.Interaction,
+    *,
+    game: str,
+    options: dict[str, object],
+    genre_choices: list[app_commands.Choice[str]],
+    difficulty_choices: list[app_commands.Choice[str]],
+    type_choices: list[app_commands.Choice[str]],
+    version_choices: list[app_commands.Choice[str]],
+) -> None:
+    compact_options = _compact_options(options)
+
+    if not compact_options:
+        removed = remove_random_song_preset(game, interaction.user.id)
+        message_key = "random_song.preset_cleared" if removed else "random_song.preset_empty"
+        await interaction.response.send_message(
+            get_message(message_key),
+            ephemeral=True,
+        )
+        return
+
+    set_random_song_preset(game, interaction.user.id, compact_options)
+    await interaction.response.send_message(
+        get_message(
+            "random_song.preset_saved",
+            preset=_preset_summary(
+                compact_options,
+                genre_choices=genre_choices,
+                difficulty_choices=difficulty_choices,
+                type_choices=type_choices,
+                version_choices=version_choices,
+            ),
+        ),
+        ephemeral=True,
+    )
+
+
 def register_random_song_command(tree: app_commands.CommandTree) -> None:
     @tree.command(
-        name="랜덤선곡",
-        description=get_message("slash.random_song_description"),
+        name="마이선곡",
+        description=get_message("slash.maimai_song_description"),
     )
     @app_commands.rename(
-        game="게임",
         min_level="최소_보면상수",
         max_level="최대_보면상수",
         genre="장르",
         difficulty="난이도",
         chart_type="유형",
-        maimai_version="마이버전",
-        chunithm_version="츄니버전",
-        level_fixed="난이도_고정",
+        version="버전",
         partner_level="2p_난이도",
     )
     @app_commands.describe(
-        game=get_message("random_song.option_game"),
         min_level=get_message("random_song.option_min_level"),
         max_level=get_message("random_song.option_max_level"),
         genre=get_message("random_song.option_genre"),
-        difficulty=get_message("random_song.option_difficulty"),
-        chart_type=get_message("random_song.option_chart_type"),
-        maimai_version=get_message("random_song.option_maimai_version"),
-        chunithm_version=get_message("random_song.option_chunithm_version"),
-        level_fixed=get_message("random_song.option_level_fixed"),
+        difficulty=get_message("random_song.option_maimai_difficulty"),
+        chart_type=get_message("random_song.option_maimai_chart_type"),
+        version=get_message("random_song.option_maimai_version"),
         partner_level=get_message("random_song.option_partner_level"),
     )
     @app_commands.choices(
-        game=GAME_CHOICES,
-        genre=GENRE_APP_CHOICES,
-        difficulty=DIFFICULTY_CHOICES,
-        chart_type=TYPE_CHOICES,
+        genre=MAIMAI_GENRE_APP_CHOICES,
+        difficulty=MAIMAI_DIFFICULTY_CHOICES,
+        chart_type=MAIMAI_TYPE_CHOICES,
     )
-    @app_commands.autocomplete(
-        maimai_version=maimai_version_autocomplete,
-        chunithm_version=chunithm_version_autocomplete,
-    )
-    async def random_song_command(
+    @app_commands.autocomplete(version=maimai_version_autocomplete)
+    async def maimai_song_command(
         interaction: discord.Interaction,
-        game: app_commands.Choice[str] | None = None,
         min_level: float | None = None,
         max_level: float | None = None,
         genre: app_commands.Choice[str] | None = None,
         difficulty: app_commands.Choice[str] | None = None,
         chart_type: app_commands.Choice[str] | None = None,
-        maimai_version: str | None = None,
-        chunithm_version: str | None = None,
-        level_fixed: bool | None = None,
+        version: str | None = None,
         partner_level: float | None = None,
     ):
-        await interaction.response.defer(thinking=True)
-        options = _random_song_options(
-            game,
-            min_level,
-            max_level,
-            genre,
-            difficulty,
-            chart_type,
-            maimai_version,
-            chunithm_version,
-            level_fixed,
-            partner_level,
-        )
-        merged_options, applied_preset = _merge_with_preset(interaction.user.id, options)
-
-        try:
-            response = await choose_random_song_response(
-                game=str(merged_options["game"]),
-                min_level=float(merged_options["min_level"]),
-                max_level=float(merged_options["max_level"]) if merged_options.get("max_level") is not None else None,
-                genre=str(merged_options["genre"]) if merged_options.get("genre") is not None else None,
-                difficulty=str(merged_options["difficulty"]) if merged_options.get("difficulty") is not None else None,
-                chart_type=str(merged_options["chart_type"]) if merged_options.get("chart_type") is not None else None,
-                maimai_version=str(merged_options["maimai_version"]) if merged_options.get("maimai_version") is not None else None,
-                chunithm_version=str(merged_options["chunithm_version"]) if merged_options.get("chunithm_version") is not None else None,
-                level_fixed=bool(merged_options["level_fixed"]),
-                partner_level=float(merged_options["partner_level"]) if merged_options.get("partner_level") is not None else None,
-            )
-        except RandomSongError as exc:
-            await interaction.followup.send(str(exc), ephemeral=True)
-            return
-        except Exception:
-            await interaction.followup.send(
-                get_message("random_song.error_fetch_failed"),
-                ephemeral=True,
-            )
-            return
-
-        await interaction.followup.send(
-            content=_recommendation_content(merged_options["game"], applied_preset),
-            embeds=response.embeds,
-            files=response.files,
+        await _send_random_song(
+            interaction,
+            game="maimai",
+            game_label="maimai DX",
+            options=_random_song_options(min_level, max_level, genre, difficulty, chart_type, version, partner_level),
+            genre_choices=MAIMAI_GENRE_APP_CHOICES,
+            difficulty_choices=MAIMAI_DIFFICULTY_CHOICES,
+            type_choices=MAIMAI_TYPE_CHOICES,
+            version_choices=MAIMAI_VERSION_CHOICES,
         )
 
     @tree.command(
-        name="랜덤선곡-프리셋",
-        description=get_message("slash.random_song_preset_description"),
+        name="츄니선곡",
+        description=get_message("slash.chunithm_song_description"),
     )
     @app_commands.rename(
-        game="게임",
         min_level="최소_보면상수",
         max_level="최대_보면상수",
         genre="장르",
         difficulty="난이도",
         chart_type="유형",
-        maimai_version="마이버전",
-        chunithm_version="츄니버전",
-        level_fixed="난이도_고정",
+        version="버전",
         partner_level="2p_난이도",
     )
     @app_commands.describe(
-        game=get_message("random_song.option_game"),
         min_level=get_message("random_song.option_min_level"),
         max_level=get_message("random_song.option_max_level"),
         genre=get_message("random_song.option_genre"),
-        difficulty=get_message("random_song.option_difficulty"),
-        chart_type=get_message("random_song.option_chart_type"),
-        maimai_version=get_message("random_song.option_maimai_version"),
-        chunithm_version=get_message("random_song.option_chunithm_version"),
-        level_fixed=get_message("random_song.option_level_fixed"),
+        difficulty=get_message("random_song.option_chunithm_difficulty"),
+        chart_type=get_message("random_song.option_chunithm_chart_type"),
+        version=get_message("random_song.option_chunithm_version"),
         partner_level=get_message("random_song.option_partner_level"),
     )
     @app_commands.choices(
-        game=GAME_CHOICES,
-        genre=GENRE_APP_CHOICES,
-        difficulty=DIFFICULTY_CHOICES,
-        chart_type=TYPE_CHOICES,
+        genre=CHUNITHM_GENRE_APP_CHOICES,
+        difficulty=CHUNITHM_DIFFICULTY_CHOICES,
+        chart_type=CHUNITHM_TYPE_CHOICES,
     )
-    @app_commands.autocomplete(
-        maimai_version=maimai_version_autocomplete,
-        chunithm_version=chunithm_version_autocomplete,
-    )
-    async def random_song_preset_command(
+    @app_commands.autocomplete(version=chunithm_version_autocomplete)
+    async def chunithm_song_command(
         interaction: discord.Interaction,
-        game: app_commands.Choice[str] | None = None,
         min_level: float | None = None,
         max_level: float | None = None,
         genre: app_commands.Choice[str] | None = None,
         difficulty: app_commands.Choice[str] | None = None,
         chart_type: app_commands.Choice[str] | None = None,
-        maimai_version: str | None = None,
-        chunithm_version: str | None = None,
-        level_fixed: bool | None = None,
+        version: str | None = None,
         partner_level: float | None = None,
     ):
-        options = _compact_options(
-            _random_song_options(
-                game,
-                min_level,
-                max_level,
-                genre,
-                difficulty,
-                chart_type,
-                maimai_version,
-                chunithm_version,
-                level_fixed,
-                partner_level,
-            )
+        await _send_random_song(
+            interaction,
+            game="chunithm",
+            game_label="CHUNITHM",
+            options=_random_song_options(min_level, max_level, genre, difficulty, chart_type, version, partner_level),
+            genre_choices=CHUNITHM_GENRE_APP_CHOICES,
+            difficulty_choices=CHUNITHM_DIFFICULTY_CHOICES,
+            type_choices=CHUNITHM_TYPE_CHOICES,
+            version_choices=CHUNITHM_VERSION_CHOICES,
         )
 
-        if not options:
-            removed = remove_random_song_preset(interaction.user.id)
-            message_key = "random_song.preset_cleared" if removed else "random_song.preset_empty"
-            await interaction.response.send_message(
-                get_message(message_key),
-                ephemeral=True,
-            )
-            return
+    @tree.command(
+        name="마이선곡-프리셋",
+        description=get_message("slash.maimai_song_preset_description"),
+    )
+    @app_commands.rename(
+        min_level="최소_보면상수",
+        max_level="최대_보면상수",
+        genre="장르",
+        difficulty="난이도",
+        chart_type="유형",
+        version="버전",
+        partner_level="2p_난이도",
+    )
+    @app_commands.describe(
+        min_level=get_message("random_song.option_min_level"),
+        max_level=get_message("random_song.option_max_level"),
+        genre=get_message("random_song.option_genre"),
+        difficulty=get_message("random_song.option_maimai_difficulty"),
+        chart_type=get_message("random_song.option_maimai_chart_type"),
+        version=get_message("random_song.option_maimai_version"),
+        partner_level=get_message("random_song.option_partner_level"),
+    )
+    @app_commands.choices(
+        genre=MAIMAI_GENRE_APP_CHOICES,
+        difficulty=MAIMAI_DIFFICULTY_CHOICES,
+        chart_type=MAIMAI_TYPE_CHOICES,
+    )
+    @app_commands.autocomplete(version=maimai_version_autocomplete)
+    async def maimai_song_preset_command(
+        interaction: discord.Interaction,
+        min_level: float | None = None,
+        max_level: float | None = None,
+        genre: app_commands.Choice[str] | None = None,
+        difficulty: app_commands.Choice[str] | None = None,
+        chart_type: app_commands.Choice[str] | None = None,
+        version: str | None = None,
+        partner_level: float | None = None,
+    ):
+        await _save_preset(
+            interaction,
+            game="maimai",
+            options=_random_song_options(min_level, max_level, genre, difficulty, chart_type, version, partner_level),
+            genre_choices=MAIMAI_GENRE_APP_CHOICES,
+            difficulty_choices=MAIMAI_DIFFICULTY_CHOICES,
+            type_choices=MAIMAI_TYPE_CHOICES,
+            version_choices=MAIMAI_VERSION_CHOICES,
+        )
 
-        set_random_song_preset(interaction.user.id, options)
-        await interaction.response.send_message(
-            get_message("random_song.preset_saved", preset=_preset_summary(options)),
-            ephemeral=True,
+    @tree.command(
+        name="츄니선곡-프리셋",
+        description=get_message("slash.chunithm_song_preset_description"),
+    )
+    @app_commands.rename(
+        min_level="최소_보면상수",
+        max_level="최대_보면상수",
+        genre="장르",
+        difficulty="난이도",
+        chart_type="유형",
+        version="버전",
+        partner_level="2p_난이도",
+    )
+    @app_commands.describe(
+        min_level=get_message("random_song.option_min_level"),
+        max_level=get_message("random_song.option_max_level"),
+        genre=get_message("random_song.option_genre"),
+        difficulty=get_message("random_song.option_chunithm_difficulty"),
+        chart_type=get_message("random_song.option_chunithm_chart_type"),
+        version=get_message("random_song.option_chunithm_version"),
+        partner_level=get_message("random_song.option_partner_level"),
+    )
+    @app_commands.choices(
+        genre=CHUNITHM_GENRE_APP_CHOICES,
+        difficulty=CHUNITHM_DIFFICULTY_CHOICES,
+        chart_type=CHUNITHM_TYPE_CHOICES,
+    )
+    @app_commands.autocomplete(version=chunithm_version_autocomplete)
+    async def chunithm_song_preset_command(
+        interaction: discord.Interaction,
+        min_level: float | None = None,
+        max_level: float | None = None,
+        genre: app_commands.Choice[str] | None = None,
+        difficulty: app_commands.Choice[str] | None = None,
+        chart_type: app_commands.Choice[str] | None = None,
+        version: str | None = None,
+        partner_level: float | None = None,
+    ):
+        await _save_preset(
+            interaction,
+            game="chunithm",
+            options=_random_song_options(min_level, max_level, genre, difficulty, chart_type, version, partner_level),
+            genre_choices=CHUNITHM_GENRE_APP_CHOICES,
+            difficulty_choices=CHUNITHM_DIFFICULTY_CHOICES,
+            type_choices=CHUNITHM_TYPE_CHOICES,
+            version_choices=CHUNITHM_VERSION_CHOICES,
         )

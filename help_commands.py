@@ -10,8 +10,10 @@ def build_server_help_embeds(guild_id: int) -> list[discord.Embed]:
         "slash_ping": get_message("commands.slash_ping"),
         "slash_gameplaza": get_message("commands.slash_gameplaza"),
         "slash_sega_facebook": get_message("commands.slash_sega_facebook"),
-        "slash_random_song": get_message("commands.slash_random_song"),
-        "slash_random_song_preset": get_message("commands.slash_random_song_preset"),
+        "slash_maimai_song": get_message("commands.slash_maimai_song"),
+        "slash_chunithm_song": get_message("commands.slash_chunithm_song"),
+        "slash_maimai_song_preset": get_message("commands.slash_maimai_song_preset"),
+        "slash_chunithm_song_preset": get_message("commands.slash_chunithm_song_preset"),
     }
     embeds = [build_embed("server_help", **command_values)]
 

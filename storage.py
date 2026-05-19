@@ -71,35 +71,41 @@ def load_state() -> dict[str, Any]:
                 fixed_seen_post_ids[page_id_text] = post_id_text
 
     random_song_presets = data.get("random_song_presets", {})
-    fixed_random_song_presets: dict[str, dict[str, object]] = {}
+    fixed_random_song_presets: dict[str, dict[str, dict[str, object]]] = {}
 
     if isinstance(random_song_presets, dict):
         allowed_keys = {
-            "game",
             "min_level",
             "max_level",
             "genre",
             "difficulty",
             "chart_type",
-            "maimai_version",
-            "chunithm_version",
-            "level_fixed",
+            "version",
             "partner_level",
         }
 
-        for uid, preset in random_song_presets.items():
-            if not isinstance(preset, dict):
+        for game in ("maimai", "chunithm"):
+            game_presets = random_song_presets.get(game)
+            if not isinstance(game_presets, dict):
                 continue
 
-            uid_text = str(uid).strip()
-            fixed_preset = {
-                key: value
-                for key, value in preset.items()
-                if key in allowed_keys and value is not None
-            }
+            fixed_game_presets: dict[str, dict[str, object]] = {}
+            for uid, preset in game_presets.items():
+                if not isinstance(preset, dict):
+                    continue
 
-            if uid_text.isdigit() and fixed_preset:
-                fixed_random_song_presets[uid_text] = fixed_preset
+                uid_text = str(uid).strip()
+                fixed_preset = {
+                    key: value
+                    for key, value in preset.items()
+                    if key in allowed_keys and value is not None
+                }
+
+                if uid_text.isdigit() and fixed_preset:
+                    fixed_game_presets[uid_text] = fixed_preset
+
+            if fixed_game_presets:
+                fixed_random_song_presets[game] = fixed_game_presets
 
     return {
         "notreat_rules": fixed_rules,
@@ -208,15 +214,25 @@ def set_sega_facebook_seen_post_id(page_id: str, post_id: str) -> None:
     save_state()
 
 
-def get_random_song_preset(uid: int) -> dict[str, object]:
+def get_random_song_preset(game: str, uid: int) -> dict[str, object]:
     presets = state.setdefault("random_song_presets", {})
-    preset = presets.get(str(uid), {})
+    game_presets = presets.setdefault(game, {})
+    if not isinstance(game_presets, dict):
+        presets[game] = {}
+        return {}
+
+    preset = game_presets.get(str(uid), {}) if isinstance(game_presets, dict) else {}
     return dict(preset) if isinstance(preset, dict) else {}
 
 
-def set_random_song_preset(uid: int, preset: dict[str, object]) -> None:
+def set_random_song_preset(game: str, uid: int, preset: dict[str, object]) -> None:
     presets = state.setdefault("random_song_presets", {})
-    presets[str(uid)] = {
+    game_presets = presets.setdefault(game, {})
+    if not isinstance(game_presets, dict):
+        game_presets = {}
+        presets[game] = game_presets
+
+    game_presets[str(uid)] = {
         key: value
         for key, value in preset.items()
         if value is not None
@@ -224,13 +240,18 @@ def set_random_song_preset(uid: int, preset: dict[str, object]) -> None:
     save_state()
 
 
-def remove_random_song_preset(uid: int) -> bool:
+def remove_random_song_preset(game: str, uid: int) -> bool:
     presets = state.setdefault("random_song_presets", {})
-    uid_text = str(uid)
-
-    if uid_text not in presets:
+    game_presets = presets.setdefault(game, {})
+    if not isinstance(game_presets, dict):
+        presets[game] = {}
         return False
 
-    del presets[uid_text]
+    uid_text = str(uid)
+
+    if uid_text not in game_presets:
+        return False
+
+    del game_presets[uid_text]
     save_state()
     return True

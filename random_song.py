@@ -32,6 +32,9 @@ LEVEL_SCALE_MAX = {
     "maimai": 15.0,
     "chunithm": 15.5,
 }
+LEVEL_WEIGHT_X_MIN = 0.13
+MAIMAI_RIDICULOUS_LEVEL_MIN = 14.9
+RIDICULOUS_LEVEL_POOL_PROBABILITY = 0.01
 
 DIFFICULTY_COLORS = {
     "basic": 0x22BB5B,
@@ -388,7 +391,7 @@ def _level_probabilities(
             x = 1.0
         else:
             position = (level - scale_min) / (scale_max - scale_min)
-            x = 0.1 + max(0.0, min(position, 1.0)) * 9.9
+            x = LEVEL_WEIGHT_X_MIN + max(0.0, min(position, 1.0)) * (10 - LEVEL_WEIGHT_X_MIN)
         weight = 1 / x
         weights_by_level[level] = weight
 
@@ -398,13 +401,24 @@ def _level_probabilities(
         for level, weight in weights_by_level.items()
     }
 
-    if game == "maimai" and 15.0 in probabilities and probabilities[15.0] < 0.01:
-        remaining_probability = 0.99
-        other_probability_sum = 1 - probabilities[15.0]
-        probabilities = {
-            level: 0.01 if level == 15.0 else probability / other_probability_sum * remaining_probability
-            for level, probability in probabilities.items()
+    if game == "maimai":
+        ridiculous_levels = {
+            level
+            for level in probabilities
+            if level >= MAIMAI_RIDICULOUS_LEVEL_MIN
         }
+        ridiculous_probability = sum(probabilities[level] for level in ridiculous_levels)
+        other_probability_sum = 1 - ridiculous_probability
+        if 0 < ridiculous_probability < 1 and other_probability_sum > 0:
+            remaining_probability = 1 - RIDICULOUS_LEVEL_POOL_PROBABILITY
+            probabilities = {
+                level: (
+                    probability / ridiculous_probability * RIDICULOUS_LEVEL_POOL_PROBABILITY
+                    if level in ridiculous_levels
+                    else probability / other_probability_sum * remaining_probability
+                )
+                for level, probability in probabilities.items()
+            }
 
     return probabilities
 

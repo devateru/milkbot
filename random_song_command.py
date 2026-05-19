@@ -158,6 +158,8 @@ def _preset_summary(preset: dict[str, object], *, include_game: bool = True) -> 
         parts.append(f"게임={_choice_name(GAME_CHOICES, preset['game'])}")
     if "min_level" in preset:
         parts.append(f"최소 보면상수={preset['min_level']}")
+    if "max_level" in preset:
+        parts.append(f"최대 보면상수={preset['max_level']}")
     if "genre" in preset:
         parts.append(f"장르={_choice_name(GENRE_APP_CHOICES, preset['genre'])}")
     if "difficulty" in preset:
@@ -199,6 +201,7 @@ def _recommendation_content(game: object, applied_preset: dict[str, object]) -> 
 def _random_song_options(
     game: app_commands.Choice[str] | None,
     min_level: float | None,
+    max_level: float | None,
     genre: app_commands.Choice[str] | None,
     difficulty: app_commands.Choice[str] | None,
     chart_type: app_commands.Choice[str] | None,
@@ -210,6 +213,7 @@ def _random_song_options(
     return {
         "game": game.value if game else None,
         "min_level": min_level,
+        "max_level": max_level,
         "genre": genre.value if genre else None,
         "difficulty": difficulty.value if difficulty else None,
         "chart_type": chart_type.value if chart_type else None,
@@ -241,6 +245,7 @@ def _merge_with_preset(
     merged = {
         "game": options.get("game") or preset.get("game") or "maimai",
         "min_level": options.get("min_level") if options.get("min_level") is not None else preset.get("min_level", 1.0),
+        "max_level": options.get("max_level") if options.get("max_level") is not None else preset.get("max_level"),
         "genre": options.get("genre") if options.get("genre") is not None else preset.get("genre"),
         "difficulty": options.get("difficulty") if options.get("difficulty") is not None else preset.get("difficulty"),
         "chart_type": options.get("chart_type") if options.get("chart_type") is not None else preset.get("chart_type"),
@@ -261,6 +266,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
     @app_commands.rename(
         game="게임",
         min_level="최소_보면상수",
+        max_level="최대_보면상수",
         genre="장르",
         difficulty="난이도",
         chart_type="유형",
@@ -272,6 +278,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
     @app_commands.describe(
         game=get_message("random_song.option_game"),
         min_level=get_message("random_song.option_min_level"),
+        max_level=get_message("random_song.option_max_level"),
         genre=get_message("random_song.option_genre"),
         difficulty=get_message("random_song.option_difficulty"),
         chart_type=get_message("random_song.option_chart_type"),
@@ -294,6 +301,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
         interaction: discord.Interaction,
         game: app_commands.Choice[str] | None = None,
         min_level: float | None = None,
+        max_level: float | None = None,
         genre: app_commands.Choice[str] | None = None,
         difficulty: app_commands.Choice[str] | None = None,
         chart_type: app_commands.Choice[str] | None = None,
@@ -306,6 +314,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
         options = _random_song_options(
             game,
             min_level,
+            max_level,
             genre,
             difficulty,
             chart_type,
@@ -320,6 +329,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
             response = await choose_random_song_response(
                 game=str(merged_options["game"]),
                 min_level=float(merged_options["min_level"]),
+                max_level=float(merged_options["max_level"]) if merged_options.get("max_level") is not None else None,
                 genre=str(merged_options["genre"]) if merged_options.get("genre") is not None else None,
                 difficulty=str(merged_options["difficulty"]) if merged_options.get("difficulty") is not None else None,
                 chart_type=str(merged_options["chart_type"]) if merged_options.get("chart_type") is not None else None,
@@ -351,6 +361,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
     @app_commands.rename(
         game="게임",
         min_level="최소_보면상수",
+        max_level="최대_보면상수",
         genre="장르",
         difficulty="난이도",
         chart_type="유형",
@@ -362,6 +373,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
     @app_commands.describe(
         game=get_message("random_song.option_game"),
         min_level=get_message("random_song.option_min_level"),
+        max_level=get_message("random_song.option_max_level"),
         genre=get_message("random_song.option_genre"),
         difficulty=get_message("random_song.option_difficulty"),
         chart_type=get_message("random_song.option_chart_type"),
@@ -384,6 +396,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
         interaction: discord.Interaction,
         game: app_commands.Choice[str] | None = None,
         min_level: float | None = None,
+        max_level: float | None = None,
         genre: app_commands.Choice[str] | None = None,
         difficulty: app_commands.Choice[str] | None = None,
         chart_type: app_commands.Choice[str] | None = None,
@@ -396,6 +409,7 @@ def register_random_song_command(tree: app_commands.CommandTree) -> None:
             _random_song_options(
                 game,
                 min_level,
+                max_level,
                 genre,
                 difficulty,
                 chart_type,

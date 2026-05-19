@@ -20,8 +20,6 @@ DATA_SOURCES = {
     "chunithm": "https://dp4p6x0xfi5o9.cloudfront.net/chunithm",
 }
 
-SITE_URL = "https://arcade-songs.zetaraku.dev"
-
 GAME_SEARCH_LABELS = {
     "maimai": "maimai",
     "chunithm": "CHUNITHM",
@@ -362,11 +360,21 @@ def _choose_level(levels: list[float]) -> tuple[float, float]:
     return selected_level, probabilities[selected_level]
 
 
+def _choose_uniform_level(levels: list[float]) -> tuple[float, float]:
+    unique_levels = sorted(set(levels))
+    if not unique_levels:
+        raise RandomSongError(get_message("random_song.error_no_matches"))
+
+    selected_level = random.choice(unique_levels)
+    return selected_level, 1 / len(unique_levels)
+
+
 def pick_random_song(
     data: dict[str, Any],
     *,
     game: str,
     min_level: float,
+    max_level: float | None,
     level_fixed: bool,
     genre: str | None,
     difficulties: set[str],
@@ -388,6 +396,8 @@ def pick_random_song(
             level = _chart_level(sheet)
             if level is None or level < min_level:
                 continue
+            if max_level is not None and level > max_level:
+                continue
             if level_fixed and abs(level - min_level) > 0.0001:
                 continue
             if not _is_intl(sheet):
@@ -405,7 +415,10 @@ def pick_random_song(
 
             candidates_by_level.setdefault(level, []).append((song, sheet, partner_sheet))
 
-    selected_level, selected_probability = _choose_level(list(candidates_by_level))
+    if max_level is not None and not level_fixed:
+        selected_level, selected_probability = _choose_uniform_level(list(candidates_by_level))
+    else:
+        selected_level, selected_probability = _choose_level(list(candidates_by_level))
     song, sheet, partner_sheet = random.choice(candidates_by_level[selected_level])
     return SongPick(
         game=game,
@@ -461,11 +474,6 @@ def _youtube_search_url(pick: SongPick) -> str:
     return "https://www.youtube.com/results?" + urllib.parse.urlencode({"search_query": query})
 
 
-def _arcade_song_url(pick: SongPick) -> str:
-    query = urllib.parse.urlencode({"id": _field_value(pick.song.get("songId"))})
-    return f"{SITE_URL}/{pick.game}/song/?{query}"
-
-
 def _format_probability(value: float) -> str:
     percent = value * 100
 
@@ -519,12 +527,6 @@ def _build_primary_embed(pick: SongPick) -> discord.Embed:
     embed.add_field(name=get_message("random_song.field_difficulty"), value=_format_difficulty(sheet), inline=True)
     embed.add_field(name=get_message("random_song.field_note_designer"), value=_field_value(sheet.get("noteDesigner")), inline=True)
     embed.add_field(name=get_message("random_song.field_version"), value=_version(song, sheet), inline=True)
-    embed.add_field(
-        name=get_message("random_song.field_links"),
-        value=f"[arcade-songs]({_arcade_song_url(pick)})",
-        inline=True,
-    )
-
     cover_url = _cover_url(pick)
     if cover_url:
         embed.set_image(url=cover_url)
@@ -567,6 +569,7 @@ async def choose_random_song(
     *,
     game: str,
     min_level: float,
+    max_level: float | None,
     genre: str | None,
     difficulty: str | None,
     chart_type: str | None,
@@ -578,6 +581,7 @@ async def choose_random_song(
     pick = await choose_random_song_pick(
         game=game,
         min_level=min_level,
+        max_level=max_level,
         genre=genre,
         difficulty=difficulty,
         chart_type=chart_type,
@@ -593,6 +597,7 @@ async def choose_random_song_response(
     *,
     game: str,
     min_level: float,
+    max_level: float | None,
     genre: str | None,
     difficulty: str | None,
     chart_type: str | None,
@@ -604,6 +609,7 @@ async def choose_random_song_response(
     pick = await choose_random_song_pick(
         game=game,
         min_level=min_level,
+        max_level=max_level,
         genre=genre,
         difficulty=difficulty,
         chart_type=chart_type,
@@ -626,6 +632,7 @@ async def choose_random_song_pick(
     *,
     game: str,
     min_level: float,
+    max_level: float | None,
     genre: str | None,
     difficulty: str | None,
     chart_type: str | None,
@@ -649,6 +656,7 @@ async def choose_random_song_pick(
         data,
         game=game,
         min_level=min_level,
+        max_level=max_level,
         level_fixed=level_fixed,
         genre=genre,
         difficulties=difficulties,

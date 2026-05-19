@@ -77,6 +77,7 @@ def load_state() -> dict[str, Any]:
         allowed_keys = {
             "game",
             "min_level",
+            "max_level",
             "genre",
             "difficulty",
             "chart_type",

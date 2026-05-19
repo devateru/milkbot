@@ -14,6 +14,7 @@
   "random_song": {
     "option_game": "maimai DX / CHUNITHM",
     "option_min_level": "이 보면상수 이상에서 선곡합니다.",
+    "option_max_level": "이 보면상수 이하에서 선곡합니다. 입력하면 범위 안에서 균등 랜덤으로 뽑습니다.",
     "option_genre": "게임별 장르를 maimai 기준으로 통합한 필터입니다.",
     "option_difficulty": "BASIC, ADVANCED, EXPERT, MASTER, RE:MASTER/ULTIMA, MAS~RE:MAS/ULT, EXP~RE:MAS/ULT 중 선택.",
     "option_chart_type": "STANDARD, DELUXE, UTAGE/WORLD'S END 중 선택.",
@@ -27,7 +28,6 @@
     "field_difficulty": "난이도",
     "field_note_designer": "노트 제작자",
     "field_version": "수록 버전",
-    "field_links": "링크",
     "difficulty_value": "{difficulty} {level} ({constant})",
     "higher_level_footer": "{probability}% 확률로 {level} 난이도를 뽑았어요! :tada:",
     "partner_embed_title": "2P 추천 보면",

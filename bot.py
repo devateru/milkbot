@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from dev_commands import handle_developer_dm_command
 from help_commands import build_server_help_embeds
 from messages import get_message
-from random_song import GENRE_CHOICES, RandomSongError, choose_random_song
+from random_song_command import register_random_song_command
 from sega_facebook import poll_forever
 from storage import (
     get_sega_facebook_channels,
@@ -56,6 +56,8 @@ tree = app_commands.CommandTree(client)
 _synced = False
 _sega_facebook_task: asyncio.Task | None = None
 
+register_random_song_command(tree)
+
 
 @client.event
 async def on_ready():
@@ -76,66 +78,6 @@ async def on_ready():
 @tree.command(name="ping", description=get_message("slash.ping_description"))
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(get_message("slash.ping_response"))
-
-
-@tree.command(name="랜덤선곡", description="국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.")
-@app_commands.rename(
-    game="게임",
-    min_level="최소_보면상수",
-    genre="장르",
-    difficulty="난이도",
-    chart_type="유형",
-    partner_level="2p_난이도",
-)
-@app_commands.describe(
-    game="maimai DX 또는 CHUNITHM. 기본값은 maimai DX.",
-    min_level="이 보면상수 이상에서 선곡합니다. 기본값은 1.",
-    genre="게임별 장르를 maimai 기준으로 통합한 필터입니다.",
-    difficulty="하나 이상 입력 가능: MASTER, RE:MASTER처럼 공백/쉼표로 구분.",
-    chart_type="STANDARD, DELUXE, UTAGE/WORLD'S END 중 하나 이상. 공백/쉼표로 구분.",
-    partner_level="2P용 기준 보면상수. 기준값 -0.5부터 +1.0까지의 보면을 함께 찾습니다.",
-)
-@app_commands.choices(
-    game=[
-        app_commands.Choice(name="maimai DX", value="maimai"),
-        app_commands.Choice(name="CHUNITHM", value="chunithm"),
-    ],
-    genre=[
-        app_commands.Choice(name=config["label"], value=genre_key)
-        for genre_key, config in GENRE_CHOICES.items()
-    ],
-)
-async def random_song_command(
-    interaction: discord.Interaction,
-    game: app_commands.Choice[str] | None = None,
-    min_level: float = 1.0,
-    genre: app_commands.Choice[str] | None = None,
-    difficulty: str | None = None,
-    chart_type: str | None = None,
-    partner_level: float | None = None,
-):
-    await interaction.response.defer(thinking=True)
-
-    try:
-        embeds = await choose_random_song(
-            game=game.value if game else "maimai",
-            min_level=min_level,
-            genre=genre.value if genre else None,
-            difficulty=difficulty,
-            chart_type=chart_type,
-            partner_level=partner_level,
-        )
-    except RandomSongError as exc:
-        await interaction.followup.send(str(exc), ephemeral=True)
-        return
-    except Exception:
-        await interaction.followup.send(
-            "arcade-songs 데이터를 가져오는 중 문제가 생겼어요. 잠시 뒤 다시 시도해줘요.",
-            ephemeral=True,
-        )
-        return
-
-    await interaction.followup.send(embeds=embeds)
 
 
 @tree.command(name="겜플라이브", description=get_message("slash.gameplaza_description"))

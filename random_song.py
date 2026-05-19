@@ -10,15 +10,12 @@ from typing import Any
 
 import discord
 
+from messages import get_message
+
 
 DATA_SOURCES = {
     "maimai": "https://dp4p6x0xfi5o9.cloudfront.net/maimai",
     "chunithm": "https://dp4p6x0xfi5o9.cloudfront.net/chunithm",
-}
-
-GAME_LABELS = {
-    "maimai": "maimai DX",
-    "chunithm": "CHUNITHM",
 }
 
 DIFFICULTY_COLORS = {
@@ -37,6 +34,11 @@ DIFFICULTY_LABELS = {
     "master": "MASTER",
     "remaster": "Re:MASTER",
     "ultima": "ULTIMA",
+}
+
+HIGH_DIFFICULTIES = {
+    "maimai": "remaster",
+    "chunithm": "ultima",
 }
 
 GENRE_CHOICES = {
@@ -66,7 +68,7 @@ GENRE_CHOICES = {
         "chunithm": {"ORIGINAL", "イロドリミドリ"},
     },
     "gekimai": {
-        "label": "オンゲキ & CHUNITHM / ゲキマイ",
+        "label": "GEKICHUMAI",
         "maimai": {"オンゲキ＆CHUNITHM"},
         "chunithm": {"ゲキマイ"},
     },
@@ -81,11 +83,18 @@ DIFFICULTY_ALIASES = {
     "expert": "expert",
     "mas": "master",
     "master": "master",
-    "remas": "remaster",
-    "re:master": "remaster",
-    "remaster": "remaster",
-    "ultima": "ultima",
-    "ult": "ultima",
+    "remas": "high",
+    "re:master": "high",
+    "remaster": "high",
+    "re": "high",
+    "ultimaremaster": "high",
+    "remasterultima": "high",
+    "re:masterultima": "high",
+    "ultima/re:master": "high",
+    "re:master/ultima": "high",
+    "high": "high",
+    "ultima": "high",
+    "ult": "high",
 }
 
 TYPE_ALIASES = {
@@ -123,16 +132,24 @@ def _normalize_compact(value: str) -> str:
 
 def parse_difficulties(value: str | None, game: str) -> set[str]:
     if not value:
-        return {"master", "remaster"} if game == "maimai" else {"master", "ultima"}
+        return {"master", HIGH_DIFFICULTIES[game]}
 
     difficulties: set[str] = set()
-    for raw_token in re.split(r"[,/| ]+", value):
+    normalized_value = re.sub(
+        r"re\s*:?\s*master\s*/\s*ultima|ultima\s*/\s*re\s*:?\s*master",
+        "high",
+        value,
+        flags=re.IGNORECASE,
+    )
+    for raw_token in re.split(r"[,/| ]+", normalized_value):
         token = _normalize_compact(raw_token)
         if not token:
             continue
         difficulty = DIFFICULTY_ALIASES.get(token)
         if difficulty is None:
-            raise RandomSongError(f"알 수 없는 난이도예요: `{raw_token}`")
+            raise RandomSongError(get_message("random_song.error_unknown_difficulty", value=raw_token))
+        if difficulty == "high":
+            difficulty = HIGH_DIFFICULTIES[game]
         difficulties.add(difficulty)
 
     return difficulties
@@ -152,19 +169,19 @@ def parse_types(value: str | None, game: str) -> set[str] | None:
     )
     matches = list(token_pattern.finditer(value))
     if not matches:
-        raise RandomSongError(f"알 수 없는 유형이에요: `{value}`")
+        raise RandomSongError(get_message("random_song.error_unknown_type", value=value))
 
     leftovers = token_pattern.sub("", value)
     leftovers = re.sub(r"[,/|\s]+", "", leftovers)
     if leftovers:
-        raise RandomSongError(f"알 수 없는 유형이에요: `{leftovers}`")
+        raise RandomSongError(get_message("random_song.error_unknown_type", value=leftovers))
 
     for match in matches:
         raw_token = match.group(0)
         compact = _normalize_compact(raw_token)
         chart_type = TYPE_ALIASES.get(compact) or TYPE_ALIASES.get(raw_token.strip().lower())
         if chart_type is None:
-            raise RandomSongError(f"알 수 없는 유형이에요: `{raw_token}`")
+            raise RandomSongError(get_message("random_song.error_unknown_type", value=raw_token))
         types.add(chart_type)
 
     if game == "chunithm":
@@ -217,7 +234,7 @@ def _matches_genre(song: dict[str, Any], game: str, genre: str | None) -> bool:
 
     genre_config = GENRE_CHOICES.get(genre)
     if genre_config is None:
-        raise RandomSongError(f"알 수 없는 장르예요: `{genre}`")
+        raise RandomSongError(get_message("random_song.error_unknown_genre", value=genre))
 
     return _song_category(song) in genre_config[game]
 
@@ -251,7 +268,7 @@ def _find_partner_sheet(
 def _choose_level(levels: list[float]) -> float:
     unique_levels = sorted(set(levels))
     if not unique_levels:
-        raise RandomSongError("조건에 맞는 보면이 없어요.")
+        raise RandomSongError(get_message("random_song.error_no_matches"))
 
     if len(unique_levels) >= 3 and random.random() < 0.035:
         return random.choice(unique_levels[-min(5, len(unique_levels)):])
@@ -337,6 +354,17 @@ def _field_value(value: Any) -> str:
     return str(value)
 
 
+def _format_difficulty(sheet: dict[str, Any]) -> str:
+    difficulty = str(sheet.get("difficulty", "")).lower()
+    difficulty_label = DIFFICULTY_LABELS.get(difficulty, _field_value(sheet.get("difficulty")))
+    return get_message(
+        "random_song.difficulty_value",
+        difficulty=difficulty_label,
+        level=_field_value(sheet.get("level")),
+        constant=_field_value(_chart_level(sheet)),
+    )
+
+
 def build_song_embeds(pick: SongPick) -> list[discord.Embed]:
     embeds = [_build_primary_embed(pick)]
 
@@ -353,25 +381,19 @@ def _build_primary_embed(pick: SongPick) -> discord.Embed:
     title = _field_value(song.get("title"))
     embed = discord.Embed(
         title=title,
-        description=f"{GAME_LABELS[pick.game]} 랜덤선곡",
         color=DIFFICULTY_COLORS.get(difficulty, 0x1976D2),
     )
 
-    embed.add_field(name="장르", value=_field_value(song.get("category")), inline=True)
-    embed.add_field(name="BPM", value=_field_value(song.get("bpm")), inline=True)
-    embed.add_field(name="작곡가", value=_field_value(song.get("artist")), inline=False)
-    embed.add_field(name="난이도", value=DIFFICULTY_LABELS.get(difficulty, _field_value(sheet.get("difficulty"))), inline=True)
-    embed.add_field(name="표기 난이도", value=_field_value(sheet.get("level")), inline=True)
-    embed.add_field(name="보면상수", value=_field_value(_chart_level(sheet)), inline=True)
-    embed.add_field(name="노트 제작자", value=_field_value(sheet.get("noteDesigner")), inline=True)
-    embed.add_field(name="수록 버전", value=_version(song, sheet), inline=True)
+    embed.add_field(name=get_message("random_song.field_genre"), value=_field_value(song.get("category")), inline=True)
+    embed.add_field(name=get_message("random_song.field_bpm"), value=_field_value(song.get("bpm")), inline=True)
+    embed.add_field(name=get_message("random_song.field_artist"), value=_field_value(song.get("artist")), inline=False)
+    embed.add_field(name=get_message("random_song.field_difficulty"), value=_format_difficulty(sheet), inline=True)
+    embed.add_field(name=get_message("random_song.field_note_designer"), value=_field_value(sheet.get("noteDesigner")), inline=True)
+    embed.add_field(name=get_message("random_song.field_version"), value=_version(song, sheet), inline=True)
 
     cover_url = _cover_url(pick)
     if cover_url:
-        embed.set_thumbnail(url=cover_url)
-
-    if pick.update_time:
-        embed.set_footer(text=f"arcade-songs.zetaraku.dev / data {pick.update_time}")
+        embed.set_image(url=cover_url)
 
     return embed
 
@@ -383,18 +405,16 @@ def _build_partner_embed(pick: SongPick) -> discord.Embed:
 
     difficulty = str(sheet.get("difficulty", "")).lower()
     embed = discord.Embed(
-        title="2P 추천 보면",
+        title=get_message("random_song.partner_embed_title"),
         color=DIFFICULTY_COLORS.get(difficulty, 0x1976D2),
     )
-    embed.add_field(name="난이도", value=DIFFICULTY_LABELS.get(difficulty, _field_value(sheet.get("difficulty"))), inline=True)
-    embed.add_field(name="표기 난이도", value=_field_value(sheet.get("level")), inline=True)
-    embed.add_field(name="보면상수", value=_field_value(_chart_level(sheet)), inline=True)
-    embed.add_field(name="노트 제작자", value=_field_value(sheet.get("noteDesigner")), inline=True)
+    embed.add_field(name=get_message("random_song.field_difficulty"), value=_format_difficulty(sheet), inline=True)
+    embed.add_field(name=get_message("random_song.field_note_designer"), value=_field_value(sheet.get("noteDesigner")), inline=True)
 
     primary_version = _version(song, pick.sheet)
     partner_version = _version(song, sheet)
     if partner_version != primary_version:
-        embed.add_field(name="수록 버전", value=partner_version, inline=True)
+        embed.add_field(name=get_message("random_song.field_version"), value=partner_version, inline=True)
 
     return embed
 
@@ -409,7 +429,7 @@ async def choose_random_song(
     partner_level: float | None,
 ) -> list[discord.Embed]:
     if game not in DATA_SOURCES:
-        raise RandomSongError("게임은 `maimai DX` 또는 `CHUNITHM`만 가능해요.")
+        raise RandomSongError(get_message("random_song.error_invalid_game"))
 
     partner_min_level = partner_level - 0.5 if partner_level is not None else None
     partner_max_level = partner_level + 1.0 if partner_level is not None else None

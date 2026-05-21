@@ -57,6 +57,13 @@ DIFFICULTY_LABELS = {
     "ultima": "ULTIMA",
 }
 
+CHART_TYPE_LABELS = {
+    "std": "STANDARD",
+    "dx": "DELUXE",
+    "utage": "UTAGE",
+    "we": "WORLD'S END",
+}
+
 HIGH_DIFFICULTIES = {
     "maimai": "remaster",
     "chunithm": "ultima",
@@ -373,17 +380,40 @@ def _find_partner_sheet(
     primary_sheet: dict[str, Any],
     min_level: float,
     max_level: float,
+    *,
+    expected_direction: int,
 ) -> dict[str, Any] | None:
     candidates: list[dict[str, Any]] = []
+    primary_level = _chart_level(primary_sheet)
     for sheet in song.get("sheets", []):
         if sheet is primary_sheet or not _is_intl(sheet):
             continue
+        if sheet.get("type") != primary_sheet.get("type"):
+            continue
 
         level = _chart_level(sheet)
-        if level is not None and min_level <= level <= max_level:
-            candidates.append(sheet)
+        if level is None or not min_level <= level <= max_level:
+            continue
+        if primary_level is not None and expected_direction > 0 and level <= primary_level:
+            continue
+        if primary_level is not None and expected_direction < 0 and level >= primary_level:
+            continue
+
+        candidates.append(sheet)
 
     return random.choice(candidates) if candidates else None
+
+
+def _partner_direction(primary_min_level: float | None, partner_min_level: float | None) -> int:
+    if primary_min_level is None or partner_min_level is None:
+        return 0
+
+    partner_requested_level = partner_min_level + 0.5
+    if partner_requested_level > primary_min_level:
+        return 1
+    if partner_requested_level < primary_min_level:
+        return -1
+    return 0
 
 
 def _level_probabilities(
@@ -492,6 +522,7 @@ def _candidate_levels(
     partner_max_level: float | None,
 ) -> dict[float, list[tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]]]:
     ignore_difficulty = bool(chart_types & {"utage", "we"})
+    partner_direction = _partner_direction(min_level, partner_min_level)
     candidates_by_level: dict[float, list[tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]]] = {}
 
     for song in data.get("songs", []):
@@ -517,7 +548,13 @@ def _candidate_levels(
 
             partner_sheet = None
             if partner_min_level is not None and partner_max_level is not None:
-                partner_sheet = _find_partner_sheet(song, sheet, partner_min_level, partner_max_level)
+                partner_sheet = _find_partner_sheet(
+                    song,
+                    sheet,
+                    partner_min_level,
+                    partner_max_level,
+                    expected_direction=partner_direction,
+                )
                 if partner_sheet is None:
                     continue
 
@@ -701,6 +738,10 @@ def _field_value(value: Any) -> str:
     return str(value)
 
 
+def _chart_type_value(sheet: dict[str, Any]) -> str:
+    return CHART_TYPE_LABELS.get(str(sheet.get("type", "")), _field_value(sheet.get("type")))
+
+
 def _genre_value(song: dict[str, Any]) -> str:
     value = _field_value(song.get("category"))
     if song.get("isLocked") is True:
@@ -710,6 +751,11 @@ def _genre_value(song: dict[str, Any]) -> str:
 
 
 def _format_difficulty(sheet: dict[str, Any]) -> str:
+    if sheet.get("type") == "we":
+        difficulty = _field_value(sheet.get("difficulty")).strip("【】")
+        level = _field_value(sheet.get("level"))
+        return f"World's End [{difficulty} {level}]"
+
     difficulty = str(sheet.get("difficulty", "")).lower()
     difficulty_label = DIFFICULTY_LABELS.get(difficulty, _field_value(sheet.get("difficulty")))
     return get_message(
@@ -744,6 +790,8 @@ def _build_primary_embed(pick: SongPick) -> discord.Embed:
     embed.add_field(name=get_message("random_song.field_bpm"), value=_field_value(song.get("bpm")), inline=True)
     embed.add_field(name=get_message("random_song.field_artist"), value=_field_value(song.get("artist")), inline=False)
     embed.add_field(name=get_message("random_song.field_difficulty"), value=_format_difficulty(sheet), inline=True)
+    if pick.game == "maimai":
+        embed.add_field(name=get_message("random_song.field_chart_type"), value=_chart_type_value(sheet), inline=True)
     embed.add_field(name=get_message("random_song.field_note_designer"), value=_field_value(sheet.get("noteDesigner")), inline=True)
     embed.add_field(name=get_message("random_song.field_version"), value=_version(song, sheet), inline=True)
     cover_url = _cover_url(pick)

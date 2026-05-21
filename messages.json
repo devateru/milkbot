@@ -25,7 +25,6 @@
     "field_bpm": "BPM",
     "field_artist": "작곡가",
     "field_difficulty": "난이도",
-    "field_chart_type": "유형",
     "field_note_designer": "노트 제작자",
     "field_version": "수록 버전",
     "difficulty_value": "{difficulty} {level} ({constant})",

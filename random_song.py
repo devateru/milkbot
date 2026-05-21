@@ -58,8 +58,8 @@ DIFFICULTY_LABELS = {
 }
 
 CHART_TYPE_LABELS = {
-    "std": "STANDARD",
-    "dx": "DELUXE",
+    "std": "STD",
+    "dx": "DX",
     "utage": "UTAGE",
     "we": "WORLD'S END",
 }
@@ -911,6 +911,16 @@ def _chart_type_value(sheet: dict[str, Any]) -> str:
     return CHART_TYPE_LABELS.get(str(sheet.get("type", "")), _field_value(sheet.get("type")))
 
 
+def _embed_title(pick: SongPick) -> str:
+    title = _field_value(pick.song.get("title"))
+    if pick.game == "maimai" and pick.sheet.get("type") in {"std", "dx"}:
+        title = f"{title} [{_chart_type_value(pick.sheet)}]"
+    if pick.song.get("isLocked") is True:
+        title = f"[🔒] {title}"
+
+    return title
+
+
 def _genre_value(song: dict[str, Any]) -> str:
     value = _field_value(song.get("category"))
     if song.get("isLocked") is True:
@@ -948,9 +958,8 @@ def _build_primary_embed(pick: SongPick) -> discord.Embed:
     song = pick.song
     sheet = pick.sheet
     difficulty = str(sheet.get("difficulty", "")).lower()
-    title = _field_value(song.get("title"))
     embed = discord.Embed(
-        title=title,
+        title=_embed_title(pick),
         url=_youtube_search_url(pick),
         color=DIFFICULTY_COLORS.get(difficulty, 0x1976D2),
     )
@@ -959,8 +968,6 @@ def _build_primary_embed(pick: SongPick) -> discord.Embed:
     embed.add_field(name=get_message("random_song.field_bpm"), value=_field_value(song.get("bpm")), inline=True)
     embed.add_field(name=get_message("random_song.field_artist"), value=_field_value(song.get("artist")), inline=False)
     embed.add_field(name=get_message("random_song.field_difficulty"), value=_format_difficulty(sheet), inline=True)
-    if pick.game == "maimai":
-        embed.add_field(name=get_message("random_song.field_chart_type"), value=_chart_type_value(sheet), inline=True)
     embed.add_field(name=get_message("random_song.field_note_designer"), value=_field_value(sheet.get("noteDesigner")), inline=True)
     embed.add_field(name=get_message("random_song.field_version"), value=_version(song, sheet), inline=True)
     cover_url = _cover_url(pick)

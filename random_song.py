@@ -922,6 +922,13 @@ def _is_picked_entry(entry: LocationEntry, pick: SongPick, song_only: bool) -> b
     return entry[2] is pick.sheet
 
 
+def _location_total(pick: SongPick, entries: list[LocationEntry]) -> int:
+    if pick.game == "maimai":
+        return len(entries) + 1
+
+    return len(entries)
+
+
 def song_location_candidates(pick: SongPick, data: dict[str, Any], limit: int = 3) -> list[SongLocationCandidate]:
     candidates: list[SongLocationCandidate] = []
     for folder_label, folder_entries, song_only in _location_folder_candidates(data, pick):
@@ -936,7 +943,7 @@ def song_location_candidates(pick: SongPick, data: dict[str, Any], limit: int = 
                             folder=folder_label,
                             sort=sort_label,
                             index=index,
-                            total=len(sorted_entries),
+                            total=_location_total(pick, sorted_entries),
                         )
                     )
                     break

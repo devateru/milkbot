@@ -238,14 +238,6 @@ class SongLocationCandidate:
     def edge_distance(self) -> int:
         return min(self.index, self.total - self.index + 1)
 
-    @property
-    def edge_label(self) -> str:
-        right_index = self.total - self.index + 1
-        if self.index <= right_index:
-            return get_message("random_song.location_from_left", count=self.index)
-
-        return get_message("random_song.location_from_right", count=right_index)
-
 
 def _normalize_compact(value: str) -> str:
     return re.sub(r"[\s_\-]+", "", value.strip().lower())
@@ -710,10 +702,19 @@ async def calculate_level_probabilities(
     }
 
 
-def _same_location_tab(pick: SongPick, song: dict[str, Any], sheet: dict[str, Any]) -> bool:
+LocationEntry = tuple[int, dict[str, Any], dict[str, Any]]
+LocationFolder = tuple[str, list[LocationEntry], bool]
+LocationSort = tuple[str, Any, bool]
+
+
+def _same_unlock_state(pick: SongPick, song: dict[str, Any]) -> bool:
+    return (song.get("isLocked") is True) == (pick.song.get("isLocked") is True)
+
+
+def _same_location_chart(pick: SongPick, song: dict[str, Any], sheet: dict[str, Any]) -> bool:
     if not _is_intl(sheet):
         return False
-    if (song.get("isLocked") is True) != (pick.song.get("isLocked") is True):
+    if not _same_unlock_state(pick, song):
         return False
     if sheet.get("difficulty") != pick.sheet.get("difficulty"):
         return False
@@ -725,48 +726,121 @@ def _same_location_tab(pick: SongPick, song: dict[str, Any], sheet: dict[str, An
     return sheet.get("type") not in {"utage", "we"}
 
 
-def _location_entries(data: dict[str, Any], pick: SongPick) -> list[tuple[int, dict[str, Any], dict[str, Any]]]:
-    entries: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+def _song_location_sheet(pick: SongPick, song: dict[str, Any]) -> dict[str, Any] | None:
+    matching_sheets = [
+        sheet
+        for sheet in song.get("sheets", [])
+        if _same_location_chart(pick, song, sheet)
+    ]
+    if not matching_sheets:
+        return None
+
+    for sheet in matching_sheets:
+        if sheet.get("type") == pick.sheet.get("type"):
+            return sheet
+
+    return matching_sheets[0]
+
+
+def _location_chart_entries(data: dict[str, Any], pick: SongPick) -> list[LocationEntry]:
+    entries: list[LocationEntry] = []
     order = 0
     for song in data.get("songs", []):
         for sheet in song.get("sheets", []):
-            if _same_location_tab(pick, song, sheet):
+            if _same_location_chart(pick, song, sheet):
                 entries.append((order, song, sheet))
                 order += 1
 
     return entries
 
 
-def _location_folder_candidates(
-    entries: list[tuple[int, dict[str, Any], dict[str, Any]]],
-    pick: SongPick,
-) -> list[tuple[str, list[tuple[int, dict[str, Any], dict[str, Any]]]]]:
+def _location_song_entries(data: dict[str, Any], pick: SongPick) -> list[LocationEntry]:
+    entries: list[LocationEntry] = []
+    order = 0
+    for song in data.get("songs", []):
+        sheet = _song_location_sheet(pick, song)
+        if sheet is None:
+            continue
+        entries.append((order, song, sheet))
+        order += 1
+
+    return entries
+
+
+def _maimai_location_folder_candidates(data: dict[str, Any], pick: SongPick) -> list[LocationFolder]:
+    song_entries = _location_song_entries(data, pick)
+    chart_entries = _location_chart_entries(data, pick)
     pick_level = _field_value(pick.sheet.get("level"))
-    pick_version = _version(pick.song, pick.sheet)
+    pick_version = _field_value(pick.song.get("version"))
     return [
         (
             get_message("random_song.location_folder_genre", value=_field_value(pick.song.get("category"))),
-            [entry for entry in entries if entry[1].get("category") == pick.song.get("category")],
+            [entry for entry in song_entries if entry[1].get("category") == pick.song.get("category")],
+            True,
         ),
         (
             get_message("random_song.location_folder_level", value=pick_level),
-            [entry for entry in entries if _field_value(entry[2].get("level")) == pick_level],
+            [entry for entry in chart_entries if _field_value(entry[2].get("level")) == pick_level],
+            False,
         ),
         (
             get_message("random_song.location_folder_version", value=pick_version),
-            [entry for entry in entries if _version(entry[1], entry[2]) == pick_version],
+            [entry for entry in song_entries if _field_value(entry[1].get("version")) == pick_version],
+            True,
         ),
         (
             get_message("random_song.location_folder_all"),
-            entries,
+            song_entries,
+            True,
         ),
     ]
 
 
-def _location_sort_candidates() -> list[tuple[str, Any]]:
+def _chunithm_location_folder_candidates(data: dict[str, Any], pick: SongPick) -> list[LocationFolder]:
+    song_entries = _location_song_entries(data, pick)
+    chart_entries = _location_chart_entries(data, pick)
+    pick_level = _field_value(pick.sheet.get("level"))
+    pick_version = _field_value(pick.song.get("version"))
+    folders: list[LocationFolder] = [
+        (
+            get_message("random_song.location_folder_genre", value=_field_value(pick.song.get("category"))),
+            [entry for entry in song_entries if entry[1].get("category") == pick.song.get("category")],
+            True,
+        ),
+        (
+            get_message("random_song.location_folder_version", value=pick_version),
+            [entry for entry in song_entries if _field_value(entry[1].get("version")) == pick_version],
+            True,
+        ),
+        (
+            get_message("random_song.location_folder_level", value=pick_level),
+            [entry for entry in chart_entries if _field_value(entry[2].get("level")) == pick_level],
+            False,
+        ),
+    ]
+    if pick.sheet.get("difficulty") == "ultima":
+        folders.append(
+            (
+                get_message("random_song.location_folder_ultima"),
+                [entry for entry in chart_entries if entry[2].get("difficulty") == "ultima"],
+                False,
+            )
+        )
+
+    return folders
+
+
+def _location_folder_candidates(data: dict[str, Any], pick: SongPick) -> list[LocationFolder]:
+    if pick.game == "chunithm":
+        return _chunithm_location_folder_candidates(data, pick)
+
+    return _maimai_location_folder_candidates(data, pick)
+
+
+def _maimai_location_sort_candidates() -> list[LocationSort]:
     return [
-        (get_message("random_song.location_sort_recommended"), lambda entry: (entry[0],)),
-        (get_message("random_song.location_sort_title"), lambda entry: (_sort_text(entry[1].get("title")), entry[0])),
+        (get_message("random_song.location_sort_recommended"), lambda entry: (entry[0],), False),
+        (get_message("random_song.location_sort_title"), lambda entry: (_sort_text(entry[1].get("title")), entry[0]), False),
         (
             get_message("random_song.location_sort_level"),
             lambda entry: (
@@ -775,32 +849,88 @@ def _location_sort_candidates() -> list[tuple[str, Any]]:
                 _sort_text(entry[1].get("title")),
                 entry[0],
             ),
+            False,
         ),
         (
             get_message("random_song.location_sort_release"),
             lambda entry: (_field_value(entry[1].get("releaseDate")), _sort_text(entry[1].get("title")), entry[0]),
+            False,
         ),
         (
             get_message("random_song.location_sort_bpm"),
             lambda entry: (_sort_number(entry[1].get("bpm")), _sort_text(entry[1].get("title")), entry[0]),
+            False,
         ),
     ]
 
 
-def _is_picked_entry(entry: tuple[int, dict[str, Any], dict[str, Any]], pick: SongPick) -> bool:
-    return entry[1] is pick.song and entry[2] is pick.sheet
+def _descending_sort_label(sort_label: str) -> str:
+    if sort_label.startswith("[") and sort_label.endswith("]"):
+        return f"[{sort_label[1:-1]} 내림차순]"
+
+    return get_message("random_song.location_sort_descending", sort=sort_label)
+
+
+def _chunithm_location_sort_candidates() -> list[LocationSort]:
+    base_sorts: list[LocationSort] = [
+        (
+            get_message("random_song.location_sort_genre"),
+            lambda entry: (_sort_text(entry[1].get("category")), _sort_text(entry[1].get("title")), entry[0]),
+            False,
+        ),
+        (get_message("random_song.location_sort_title"), lambda entry: (_sort_text(entry[1].get("title")), entry[0]), False),
+        (
+            get_message("random_song.location_sort_release"),
+            lambda entry: (_field_value(entry[1].get("releaseDate")), _sort_text(entry[1].get("title")), entry[0]),
+            False,
+        ),
+        (
+            get_message("random_song.location_sort_level_chunithm"),
+            lambda entry: (
+                _sort_number(entry[2].get("levelValue")),
+                _sort_number(_chart_level(entry[2])),
+                _sort_text(entry[1].get("title")),
+                entry[0],
+            ),
+            False,
+        ),
+    ]
+    descending_sorts = [
+        (
+            _descending_sort_label(sort_label),
+            sort_key,
+            True,
+        )
+        for sort_label, sort_key, _ in base_sorts
+    ]
+    return base_sorts + descending_sorts
+
+
+def _location_sort_candidates(pick: SongPick) -> list[LocationSort]:
+    if pick.game == "chunithm":
+        return _chunithm_location_sort_candidates()
+
+    return _maimai_location_sort_candidates()
+
+
+def _is_picked_entry(entry: LocationEntry, pick: SongPick, song_only: bool) -> bool:
+    if entry[1] is not pick.song:
+        return False
+    if song_only:
+        return True
+
+    return entry[2] is pick.sheet
 
 
 def song_location_candidates(pick: SongPick, data: dict[str, Any], limit: int = 3) -> list[SongLocationCandidate]:
-    entries = _location_entries(data, pick)
     candidates: list[SongLocationCandidate] = []
-    for folder_label, folder_entries in _location_folder_candidates(entries, pick):
+    for folder_label, folder_entries, song_only in _location_folder_candidates(data, pick):
         if not folder_entries:
             continue
-        for sort_label, sort_key in _location_sort_candidates():
-            sorted_entries = sorted(folder_entries, key=sort_key)
+        for sort_label, sort_key, descending in _location_sort_candidates(pick):
+            sorted_entries = sorted(folder_entries, key=sort_key, reverse=descending)
             for index, entry in enumerate(sorted_entries, start=1):
-                if _is_picked_entry(entry, pick):
+                if _is_picked_entry(entry, pick, song_only):
                     candidates.append(
                         SongLocationCandidate(
                             folder=folder_label,
@@ -822,7 +952,7 @@ def build_song_location_text(pick: SongPick, data: dict[str, Any]) -> str:
 
     lines = [
         get_message("random_song.location_header", title=_song_title(pick.song)),
-        get_message("random_song.location_assumption"),
+        get_message("random_song.location_test_warning"),
     ]
     for order, candidate in enumerate(candidates, start=1):
         lines.append(
@@ -833,7 +963,6 @@ def build_song_location_text(pick: SongPick, data: dict[str, Any]) -> str:
                 sort=candidate.sort,
                 index=candidate.index,
                 total=candidate.total,
-                edge=candidate.edge_label,
             )
         )
 

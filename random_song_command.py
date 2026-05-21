@@ -11,6 +11,8 @@ from random_song import (
     CHUNITHM_GENRE_CHOICES,
     MAIMAI_GENRE_CHOICES,
     RandomSongError,
+    RandomSongResponse,
+    build_song_location_text,
     calculate_level_probabilities,
     choose_random_song_response,
 )
@@ -463,6 +465,23 @@ async def build_chunithm_probability_table_embed(uid: int) -> discord.Embed:
     )
 
 
+class SongLocationView(discord.ui.View):
+    def __init__(self, response: RandomSongResponse) -> None:
+        super().__init__(timeout=900)
+        self.response = response
+
+    @discord.ui.button(label=get_message("random_song.location_button"), style=discord.ButtonStyle.secondary)
+    async def song_location_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ) -> None:
+        await interaction.response.send_message(
+            build_song_location_text(self.response.pick, self.response.data),
+            ephemeral=True,
+        )
+
+
 async def _send_random_song(
     interaction: discord.Interaction,
     *,
@@ -520,6 +539,7 @@ async def _send_random_song(
         ),
         embeds=response.embeds,
         files=response.files,
+        view=SongLocationView(response),
     )
 
 

@@ -211,6 +211,7 @@ class SongPick:
     song: dict[str, Any]
     sheet: dict[str, Any]
     partner_sheet: dict[str, Any] | None
+    data: dict[str, Any]
     data_source_url: str
     update_time: str
     requested_level: float | None
@@ -222,6 +223,28 @@ class SongPick:
 class RandomSongResponse:
     embeds: list[discord.Embed]
     files: list[discord.File]
+    pick: SongPick
+    data: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SongLocationCandidate:
+    folder: str
+    sort: str
+    index: int
+    total: int
+
+    @property
+    def edge_distance(self) -> int:
+        return min(self.index, self.total - self.index + 1)
+
+    @property
+    def edge_label(self) -> str:
+        right_index = self.total - self.index + 1
+        if self.index <= right_index:
+            return get_message("random_song.location_from_left", count=self.index)
+
+        return get_message("random_song.location_from_right", count=right_index)
 
 
 def _normalize_compact(value: str) -> str:
@@ -354,6 +377,21 @@ def _chart_level(sheet: dict[str, Any]) -> float | None:
 
 def _song_category(song: dict[str, Any]) -> str | None:
     return song.get("category")
+
+
+def _song_title(song: dict[str, Any]) -> str:
+    return _field_value(song.get("title"))
+
+
+def _sort_text(value: Any) -> str:
+    return _field_value(value).casefold()
+
+
+def _sort_number(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _matches_genre(song: dict[str, Any], game: str, genre: str | None) -> bool:
@@ -605,6 +643,7 @@ def pick_random_song(
         song=song,
         sheet=sheet,
         partner_sheet=partner_sheet,
+        data=data,
         data_source_url=DATA_SOURCES[game],
         update_time=data.get("updateTime", ""),
         requested_level=min_level,
@@ -669,6 +708,136 @@ async def calculate_level_probabilities(
         level: probability / probability_sum
         for level, probability in combined_probabilities.items()
     }
+
+
+def _same_location_tab(pick: SongPick, song: dict[str, Any], sheet: dict[str, Any]) -> bool:
+    if not _is_intl(sheet):
+        return False
+    if (song.get("isLocked") is True) != (pick.song.get("isLocked") is True):
+        return False
+    if sheet.get("difficulty") != pick.sheet.get("difficulty"):
+        return False
+
+    pick_type = pick.sheet.get("type")
+    if pick_type in {"utage", "we"}:
+        return sheet.get("type") == pick_type
+
+    return sheet.get("type") not in {"utage", "we"}
+
+
+def _location_entries(data: dict[str, Any], pick: SongPick) -> list[tuple[int, dict[str, Any], dict[str, Any]]]:
+    entries: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+    order = 0
+    for song in data.get("songs", []):
+        for sheet in song.get("sheets", []):
+            if _same_location_tab(pick, song, sheet):
+                entries.append((order, song, sheet))
+                order += 1
+
+    return entries
+
+
+def _location_folder_candidates(
+    entries: list[tuple[int, dict[str, Any], dict[str, Any]]],
+    pick: SongPick,
+) -> list[tuple[str, list[tuple[int, dict[str, Any], dict[str, Any]]]]]:
+    pick_level = _field_value(pick.sheet.get("level"))
+    pick_version = _version(pick.song, pick.sheet)
+    return [
+        (
+            get_message("random_song.location_folder_genre", value=_field_value(pick.song.get("category"))),
+            [entry for entry in entries if entry[1].get("category") == pick.song.get("category")],
+        ),
+        (
+            get_message("random_song.location_folder_level", value=pick_level),
+            [entry for entry in entries if _field_value(entry[2].get("level")) == pick_level],
+        ),
+        (
+            get_message("random_song.location_folder_version", value=pick_version),
+            [entry for entry in entries if _version(entry[1], entry[2]) == pick_version],
+        ),
+        (
+            get_message("random_song.location_folder_all"),
+            entries,
+        ),
+    ]
+
+
+def _location_sort_candidates() -> list[tuple[str, Any]]:
+    return [
+        (get_message("random_song.location_sort_recommended"), lambda entry: (entry[0],)),
+        (get_message("random_song.location_sort_title"), lambda entry: (_sort_text(entry[1].get("title")), entry[0])),
+        (
+            get_message("random_song.location_sort_level"),
+            lambda entry: (
+                _sort_number(entry[2].get("levelValue")),
+                _sort_number(_chart_level(entry[2])),
+                _sort_text(entry[1].get("title")),
+                entry[0],
+            ),
+        ),
+        (
+            get_message("random_song.location_sort_release"),
+            lambda entry: (_field_value(entry[1].get("releaseDate")), _sort_text(entry[1].get("title")), entry[0]),
+        ),
+        (
+            get_message("random_song.location_sort_bpm"),
+            lambda entry: (_sort_number(entry[1].get("bpm")), _sort_text(entry[1].get("title")), entry[0]),
+        ),
+    ]
+
+
+def _is_picked_entry(entry: tuple[int, dict[str, Any], dict[str, Any]], pick: SongPick) -> bool:
+    return entry[1] is pick.song and entry[2] is pick.sheet
+
+
+def song_location_candidates(pick: SongPick, data: dict[str, Any], limit: int = 3) -> list[SongLocationCandidate]:
+    entries = _location_entries(data, pick)
+    candidates: list[SongLocationCandidate] = []
+    for folder_label, folder_entries in _location_folder_candidates(entries, pick):
+        if not folder_entries:
+            continue
+        for sort_label, sort_key in _location_sort_candidates():
+            sorted_entries = sorted(folder_entries, key=sort_key)
+            for index, entry in enumerate(sorted_entries, start=1):
+                if _is_picked_entry(entry, pick):
+                    candidates.append(
+                        SongLocationCandidate(
+                            folder=folder_label,
+                            sort=sort_label,
+                            index=index,
+                            total=len(sorted_entries),
+                        )
+                    )
+                    break
+
+    candidates.sort(key=lambda candidate: (candidate.edge_distance, candidate.total, candidate.folder, candidate.sort))
+    return candidates[:limit]
+
+
+def build_song_location_text(pick: SongPick, data: dict[str, Any]) -> str:
+    candidates = song_location_candidates(pick, data)
+    if not candidates:
+        return get_message("random_song.location_no_matches")
+
+    lines = [
+        get_message("random_song.location_header", title=_song_title(pick.song)),
+        get_message("random_song.location_assumption"),
+    ]
+    for order, candidate in enumerate(candidates, start=1):
+        lines.append(
+            get_message(
+                "random_song.location_line",
+                order=order,
+                folder=candidate.folder,
+                sort=candidate.sort,
+                index=candidate.index,
+                total=candidate.total,
+                edge=candidate.edge_label,
+            )
+        )
+
+    return "\n".join(lines)
 
 
 def _cover_url(pick: SongPick) -> str | None:
@@ -887,9 +1056,9 @@ async def choose_random_song_response(
 
     if cover_file is not None:
         embeds[0].set_image(url=f"attachment://{cover_file.filename}")
-        return RandomSongResponse(embeds=embeds, files=[cover_file])
+        return RandomSongResponse(embeds=embeds, files=[cover_file], pick=pick, data=pick.data)
 
-    return RandomSongResponse(embeds=embeds, files=[])
+    return RandomSongResponse(embeds=embeds, files=[], pick=pick, data=pick.data)
 
 
 async def choose_random_song_pick(
@@ -953,6 +1122,7 @@ async def choose_random_song_pick(
         song=pick.song,
         sheet=pick.sheet,
         partner_sheet=pick.partner_sheet,
+        data=pick.data,
         data_source_url=pick.data_source_url,
         update_time=pick.update_time,
         requested_level=pick.requested_level,

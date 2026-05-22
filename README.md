@@ -5,8 +5,6 @@ random personal discord bot
 
 - `DISCORD_TOKEN`: Discord bot token
 - `BOT_DEVELOPER_ID`: bot developer Discord user ID
-- `X_TOKEN`: X API bearer token used by `/트위터업뎃`
-- `TWITTER_UPDATE_POLL_SECONDS`: X post check interval, default `60`
 
 ideas/TODOs
 

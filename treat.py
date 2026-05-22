@@ -134,8 +134,11 @@ async def treat_list_command(interaction: discord.Interaction) -> None:
     )
 
 
-def register_treat_command(tree: app_commands.CommandTree) -> None:
-    tree.add_command(treat_group)
+def register_treat_command(
+    tree: app_commands.CommandTree,
+    guild: discord.abc.Snowflake,
+) -> None:
+    tree.add_command(treat_group, guild=guild)
 
 
 def _contains_treat_characters(message_text: str, treat: str) -> bool:

@@ -104,7 +104,6 @@
     "slash_help": "`/help` - 사용 가능한 명령어를 확인합니다.",
     "slash_ping": "`/ping` - 밀크봇이 응답하는지 확인합니다.",
     "slash_gameplaza": "`/겜플라이브` - 게임플라자 라이브 상태를 확인합니다.",
-    "slash_twitter_update": "`/트위터업뎃` - 서버에서 추적 중인 X 계정 새 게시물 알림 목록을 확인합니다.",
     "slash_maimai_song": "`/마이선곡` - maimai DX 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
     "slash_chunithm_song": "`/츄니선곡` - CHUNITHM 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
     "slash_maimai_song_preset": "`/마이선곡-프리셋` - 마이선곡 기본 옵션 프리셋을 저장하거나 초기화합니다.",
@@ -140,7 +139,7 @@
       "fields": [
         {
           "name": "슬래시 명령어",
-          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_twitter_update}\n{slash_maimai_song}\n{slash_chunithm_song}\n{slash_maimai_song_preset}\n{slash_chunithm_song_preset}",
+          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_maimai_song}\n{slash_chunithm_song}\n{slash_maimai_song_preset}\n{slash_chunithm_song_preset}",
           "inline": false
         }
       ]

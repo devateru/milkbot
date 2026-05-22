@@ -6,12 +6,32 @@ from typing import Any
 STATE_FILE = Path("milkbot_state.json")
 
 
+def normalize_handle_text(value: object) -> str:
+    text = str(value).strip()
+
+    if not text:
+        return ""
+
+    text = text.split("?", 1)[0].rstrip("/")
+
+    if "/" in text:
+        parts = [part for part in text.split("/") if part]
+        text = parts[-1] if parts else text
+
+    text = text.removeprefix("@").strip()
+
+    if 1 <= len(text) <= 15 and all(c.isalnum() or c == "_" for c in text):
+        return text.lower()
+
+    return ""
+
+
 def default_state() -> dict[str, Any]:
     return {
-        "notreat_rules": {},
         "treat_allowed_guild_ids": [],
-        "sega_facebook_channels": {},
-        "sega_facebook_seen_post_ids": {},
+        "guild_treat_rules": {},
+        "twitter_update_guilds": {},
+        "twitter_update_seen_tweet_ids": {},
         "random_song_presets": {},
         "random_song_unconfigured_warnings": {},
     }
@@ -30,16 +50,6 @@ def load_state() -> dict[str, Any]:
     if not isinstance(data, dict):
         return default_state()
 
-    rules = data.get("notreat_rules", {})
-    fixed_rules: dict[str, list[str]] = {}
-
-    if isinstance(rules, dict):
-        for uid, treats in rules.items():
-            if isinstance(treats, list):
-                fixed_rules[str(uid)] = [str(t).strip() for t in treats if str(t).strip()]
-            elif isinstance(treats, str) and treats.strip():
-                fixed_rules[str(uid)] = [treats.strip()]
-
     guild_ids = data.get("treat_allowed_guild_ids", [])
     fixed_guild_ids: list[str] = []
 
@@ -49,27 +59,100 @@ def load_state() -> dict[str, Any]:
             if guild_id.isdigit() and guild_id not in fixed_guild_ids:
                 fixed_guild_ids.append(guild_id)
 
-    facebook_channels = data.get("sega_facebook_channels", {})
-    fixed_facebook_channels: dict[str, str] = {}
+    guild_treat_rules = data.get("guild_treat_rules", {})
+    fixed_guild_treat_rules: dict[str, list[dict[str, object]]] = {}
 
-    if isinstance(facebook_channels, dict):
-        for channel_id, guild_id in facebook_channels.items():
-            channel_id_text = str(channel_id).strip()
+    if isinstance(guild_treat_rules, dict):
+        for guild_id, rules in guild_treat_rules.items():
             guild_id_text = str(guild_id).strip()
 
-            if guild_id_text.isdigit() and channel_id_text.isdigit():
-                fixed_facebook_channels[channel_id_text] = guild_id_text
+            if not guild_id_text.isdigit() or not isinstance(rules, list):
+                continue
 
-    seen_post_ids = data.get("sega_facebook_seen_post_ids", {})
-    fixed_seen_post_ids: dict[str, str] = {}
+            fixed_rules: list[dict[str, object]] = []
+            seen_treats: set[str] = set()
 
-    if isinstance(seen_post_ids, dict):
-        for page_id, post_id in seen_post_ids.items():
-            page_id_text = str(page_id).strip()
-            post_id_text = str(post_id).strip()
+            for rule in rules:
+                if isinstance(rule, dict):
+                    treat = str(rule.get("treat", "")).strip()
+                    flexible = bool(rule.get("flexible", False))
+                elif isinstance(rule, str):
+                    treat = rule.strip()
+                    flexible = False
+                else:
+                    continue
 
-            if page_id_text and post_id_text:
-                fixed_seen_post_ids[page_id_text] = post_id_text
+                if not treat or treat in seen_treats:
+                    continue
+
+                fixed_rules.append({"treat": treat, "flexible": flexible})
+                seen_treats.add(treat)
+
+            if fixed_rules:
+                fixed_guild_treat_rules[guild_id_text] = fixed_rules
+
+    twitter_update_guilds = data.get("twitter_update_guilds", {})
+    fixed_twitter_update_guilds: dict[str, dict[str, object]] = {}
+
+    if isinstance(twitter_update_guilds, dict):
+        for guild_id, config in twitter_update_guilds.items():
+            guild_id_text = str(guild_id).strip()
+
+            if not guild_id_text.isdigit() or not isinstance(config, dict):
+                continue
+
+            fixed_channels: dict[str, dict[str, object]] = {}
+            channels = config.get("channels")
+
+            if isinstance(channels, dict):
+                for channel_id, channel_config in channels.items():
+                    channel_id_text = str(channel_id).strip()
+
+                    if not channel_id_text.isdigit() or not isinstance(channel_config, dict):
+                        continue
+
+                    handles = channel_config.get("handles", [])
+                    fixed_handles: list[str] = []
+
+                    if isinstance(handles, list):
+                        for handle in handles:
+                            handle_text = normalize_handle_text(handle)
+                            if handle_text and handle_text not in fixed_handles:
+                                fixed_handles.append(handle_text)
+
+                    fixed_channels[channel_id_text] = {
+                        "enabled": bool(channel_config.get("enabled", False)),
+                        "handles": fixed_handles,
+                    }
+            else:
+                channel_id = str(config.get("channel_id", "")).strip()
+                handles = config.get("handles", [])
+                fixed_handles: list[str] = []
+
+                if isinstance(handles, list):
+                    for handle in handles:
+                        handle_text = normalize_handle_text(handle)
+                        if handle_text and handle_text not in fixed_handles:
+                            fixed_handles.append(handle_text)
+
+                if channel_id.isdigit():
+                    fixed_channels[channel_id] = {
+                        "enabled": bool(config.get("enabled", False)),
+                        "handles": fixed_handles,
+                    }
+
+            fixed_twitter_update_guilds[guild_id_text] = {"channels": fixed_channels}
+
+    seen_tweet_ids = data.get("twitter_update_seen_tweet_ids", {})
+    fixed_seen_tweet_ids: dict[str, str] = {}
+
+    if isinstance(seen_tweet_ids, dict):
+        for handle, tweet_id in seen_tweet_ids.items():
+            handle_text = normalize_handle_text(handle)
+            tweet_id_text = str(tweet_id).strip()
+
+            if handle_text and tweet_id_text:
+                fixed_seen_tweet_ids[handle_text] = tweet_id_text
 
     random_song_presets = data.get("random_song_presets", {})
     fixed_random_song_presets: dict[str, dict[str, dict[str, object]]] = {}
@@ -128,10 +211,10 @@ def load_state() -> dict[str, Any]:
                 fixed_random_song_unconfigured_warnings[game] = fixed_game_warnings
 
     return {
-        "notreat_rules": fixed_rules,
         "treat_allowed_guild_ids": fixed_guild_ids,
-        "sega_facebook_channels": fixed_facebook_channels,
-        "sega_facebook_seen_post_ids": fixed_seen_post_ids,
+        "guild_treat_rules": fixed_guild_treat_rules,
+        "twitter_update_guilds": fixed_twitter_update_guilds,
+        "twitter_update_seen_tweet_ids": fixed_seen_tweet_ids,
         "random_song_presets": fixed_random_song_presets,
         "random_song_unconfigured_warnings": fixed_random_song_unconfigured_warnings,
     }
@@ -145,30 +228,76 @@ def save_state() -> None:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def get_treats(uid: int) -> list[str]:
-    return state.setdefault("notreat_rules", {}).setdefault(str(uid), [])
+def _get_guild_treat_rules_for_update(guild_id: int) -> list[dict[str, object]]:
+    rules_by_guild = state.setdefault("guild_treat_rules", {})
+
+    if not isinstance(rules_by_guild, dict):
+        rules_by_guild = {}
+        state["guild_treat_rules"] = rules_by_guild
+
+    guild_id_text = str(guild_id)
+    rules = rules_by_guild.setdefault(guild_id_text, [])
+
+    if not isinstance(rules, list):
+        rules = []
+        rules_by_guild[guild_id_text] = rules
+
+    return rules
 
 
-def add_treat(uid: int, treat: str) -> bool:
-    treats = get_treats(uid)
+def get_guild_treat_rules(guild_id: int) -> list[dict[str, object]]:
+    rules_by_guild = state.get("guild_treat_rules", {})
 
-    if treat in treats:
+    if not isinstance(rules_by_guild, dict):
+        return []
+
+    rules = rules_by_guild.get(str(guild_id), [])
+
+    if not isinstance(rules, list):
+        return []
+
+    return [dict(rule) for rule in rules if isinstance(rule, dict)]
+
+
+def add_guild_treat(guild_id: int, treat: str, flexible: bool = False) -> bool:
+    treat = treat.strip()
+
+    if not treat:
         return False
 
-    treats.append(treat)
+    rules = _get_guild_treat_rules_for_update(guild_id)
+
+    if any(rule.get("treat") == treat for rule in rules):
+        return False
+
+    rules.append({"treat": treat, "flexible": flexible})
     save_state()
     return True
 
 
-def remove_treat(uid: int, treat: str) -> bool:
-    treats = get_treats(uid)
+def remove_guild_treat(guild_id: int, treat: str) -> bool:
+    rules_by_guild = state.setdefault("guild_treat_rules", {})
 
-    if treat not in treats:
+    if not isinstance(rules_by_guild, dict):
         return False
 
-    treats.remove(treat)
-    save_state()
-    return True
+    guild_id_text = str(guild_id)
+    rules = rules_by_guild.get(guild_id_text, [])
+
+    if not isinstance(rules, list):
+        return False
+
+    for index, rule in enumerate(rules):
+        if isinstance(rule, dict) and rule.get("treat") == treat:
+            del rules[index]
+
+            if not rules:
+                del rules_by_guild[guild_id_text]
+
+            save_state()
+            return True
+
+    return False
 
 
 def get_allowed_guild_ids() -> list[str]:
@@ -200,39 +329,111 @@ def remove_allowed_guild(guild_id: int) -> bool:
     return True
 
 
-def get_sega_facebook_channels() -> dict[str, str]:
-    channels = state.setdefault("sega_facebook_channels", {})
-    return dict(channels)
+def get_twitter_update_guild_config(guild_id: int) -> dict[str, object]:
+    configs = state.setdefault("twitter_update_guilds", {})
+
+    if not isinstance(configs, dict):
+        state["twitter_update_guilds"] = {}
+        return {"channels": {}}
+
+    config = configs.get(str(guild_id))
+    return dict(config) if isinstance(config, dict) else {"channels": {}}
 
 
-def set_sega_facebook_channel(guild_id: int, channel_id: int) -> None:
-    channels = state.setdefault("sega_facebook_channels", {})
-    channels[str(channel_id)] = str(guild_id)
-    save_state()
+def get_twitter_update_channel_config(guild_id: int, channel_id: int) -> dict[str, object] | None:
+    config = get_twitter_update_guild_config(guild_id)
+    channels = config.get("channels", {})
+
+    if not isinstance(channels, dict):
+        return None
+
+    channel_config = channels.get(str(channel_id))
+    return dict(channel_config) if isinstance(channel_config, dict) else None
 
 
-def remove_sega_facebook_channel(channel_id: int) -> bool:
-    channels = state.setdefault("sega_facebook_channels", {})
+def get_twitter_update_channel_configs(guild_id: int) -> dict[str, dict[str, object]]:
+    config = get_twitter_update_guild_config(guild_id)
+    channels = config.get("channels", {})
+
+    if not isinstance(channels, dict):
+        return {}
+
+    return {
+        str(channel_id): dict(channel_config)
+        for channel_id, channel_config in channels.items()
+        if str(channel_id).isdigit() and isinstance(channel_config, dict)
+    }
+
+
+def set_twitter_update_channel_config(
+    guild_id: int,
+    channel_id: int | str,
+    *,
+    enabled: bool,
+    handles: list[str],
+) -> None:
+    configs = state.setdefault("twitter_update_guilds", {})
+
+    if not isinstance(configs, dict):
+        configs = {}
+        state["twitter_update_guilds"] = configs
+
+    fixed_handles: list[str] = []
+
+    for handle in handles:
+        handle_text = normalize_handle_text(handle)
+
+        if handle_text and handle_text not in fixed_handles:
+            fixed_handles.append(handle_text)
+
+    guild_id_text = str(guild_id)
     channel_id_text = str(channel_id)
 
-    if channel_id_text not in channels:
-        return False
+    if not channel_id_text.isdigit():
+        return
 
-    del channels[channel_id_text]
+    guild_config = configs.setdefault(guild_id_text, {"channels": {}})
+
+    if not isinstance(guild_config, dict):
+        guild_config = {"channels": {}}
+        configs[guild_id_text] = guild_config
+
+    channels = guild_config.setdefault("channels", {})
+
+    if not isinstance(channels, dict):
+        channels = {}
+        guild_config["channels"] = channels
+
+    channels[channel_id_text] = {
+        "enabled": enabled,
+        "handles": fixed_handles,
+    }
     save_state()
-    return True
 
 
-def get_sega_facebook_seen_post_id(page_id: str) -> str | None:
-    seen_post_ids = state.setdefault("sega_facebook_seen_post_ids", {})
-    value = seen_post_ids.get(page_id)
+def get_twitter_update_seen_tweet_id(handle: str) -> str | None:
+    seen_tweet_ids = state.setdefault("twitter_update_seen_tweet_ids", {})
+
+    if not isinstance(seen_tweet_ids, dict):
+        state["twitter_update_seen_tweet_ids"] = {}
+        return None
+
+    value = seen_tweet_ids.get(normalize_handle_text(handle))
     return str(value) if value else None
 
 
-def set_sega_facebook_seen_post_id(page_id: str, post_id: str) -> None:
-    seen_post_ids = state.setdefault("sega_facebook_seen_post_ids", {})
-    seen_post_ids[page_id] = post_id
-    save_state()
+def set_twitter_update_seen_tweet_id(handle: str, tweet_id: str) -> None:
+    seen_tweet_ids = state.setdefault("twitter_update_seen_tweet_ids", {})
+
+    if not isinstance(seen_tweet_ids, dict):
+        seen_tweet_ids = {}
+        state["twitter_update_seen_tweet_ids"] = seen_tweet_ids
+
+    handle_text = normalize_handle_text(handle)
+
+    if handle_text:
+        seen_tweet_ids[handle_text] = str(tweet_id)
+        save_state()
 
 
 def get_random_song_preset(game: str, uid: int) -> dict[str, object]:

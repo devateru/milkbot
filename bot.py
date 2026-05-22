@@ -16,14 +16,21 @@ from random_song_command import (
     build_maimai_probability_table_embed,
     register_random_song_command,
 )
-from sega_facebook import poll_forever
 from storage import (
-    get_sega_facebook_channels,
-    remove_sega_facebook_channel,
-    set_sega_facebook_channel,
+    get_twitter_update_channel_config,
+    get_twitter_update_channel_configs,
+    normalize_handle_text,
+    set_twitter_update_channel_config,
 )
 from thumbnail_board import build_gameplaza_thumbnail_board
-from treat import handle_notreat, handle_user_dm_command
+from treat import handle_notreat, register_treat_command
+from twitter_updates import (
+    DEFAULT_HANDLES,
+    SPECIAL_DEFAULT_CHANNEL_ID,
+    SPECIAL_GUILD_ID,
+    default_handles_for_guild,
+    poll_forever as poll_twitter_updates_forever,
+)
 from youtube_live import (
     MachineStatus,
     YouTubeLiveError,
@@ -39,8 +46,8 @@ GAMEPLAZA_YOUTUBE_URL = os.getenv(
     "GAMEPLAZA_YOUTUBE_URL",
     "https://www.youtube.com/@GAMEPLAZA_C/streams",
 )
-FACEBOOK_ACCESS_TOKEN = os.getenv("FACEBOOK_ACCESS_TOKEN")
-SEGA_FACEBOOK_POLL_SECONDS = int(os.getenv("SEGA_FACEBOOK_POLL_SECONDS", "60"))
+X_TOKEN = os.getenv("X_TOKEN")
+TWITTER_UPDATE_POLL_SECONDS = int(os.getenv("TWITTER_UPDATE_POLL_SECONDS", "60"))
 
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN is not set in .env")
@@ -59,23 +66,29 @@ client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
 _synced = False
-_sega_facebook_task: asyncio.Task | None = None
+_twitter_update_task: asyncio.Task | None = None
 _update_dm_sent = False
 
 register_random_song_command(tree)
+register_treat_command(tree)
 
 
 @client.event
 async def on_ready():
-    global _sega_facebook_task, _synced, _update_dm_sent
+    global _synced, _twitter_update_task, _update_dm_sent
 
     if not _synced:
         await tree.sync()
         _synced = True
 
-    if _sega_facebook_task is None or _sega_facebook_task.done():
-        _sega_facebook_task = asyncio.create_task(
-            poll_forever(client, FACEBOOK_ACCESS_TOKEN, SEGA_FACEBOOK_POLL_SECONDS)
+    if _twitter_update_task is None or _twitter_update_task.done():
+        _twitter_update_task = asyncio.create_task(
+            poll_twitter_updates_forever(
+                client,
+                X_TOKEN,
+                TWITTER_UPDATE_POLL_SECONDS,
+                get_twitter_update_targets,
+            )
         )
 
     if not _update_dm_sent:
@@ -183,21 +196,94 @@ def can_manage_server(interaction: discord.Interaction) -> bool:
     return permissions.administrator or permissions.manage_guild
 
 
-async def resolve_sega_facebook_channel(
+def _handles_from_channel_config(
+    guild_id: int,
+    channel_id: int,
+    config: dict[str, object] | None,
+) -> list[str]:
+    if config is None:
+        if guild_id == SPECIAL_GUILD_ID and channel_id == SPECIAL_DEFAULT_CHANNEL_ID:
+            return default_handles_for_guild(guild_id)
+
+        return []
+
+    handles = config.get("handles", [])
+
+    if not isinstance(handles, list):
+        return default_handles_for_guild(guild_id)
+
+    fixed_handles: list[str] = []
+
+    for handle in handles:
+        handle_text = normalize_handle_text(handle)
+
+        if handle_text and handle_text not in fixed_handles:
+            fixed_handles.append(handle_text)
+
+    return fixed_handles
+
+
+def is_twitter_update_channel_enabled(
+    guild_id: int,
+    channel_id: int,
+    config: dict[str, object] | None,
+) -> bool:
+    if config is None:
+        return guild_id == SPECIAL_GUILD_ID and channel_id == SPECIAL_DEFAULT_CHANNEL_ID
+
+    return bool(config.get("enabled", False))
+
+
+def get_twitter_update_targets() -> list[dict[str, object]]:
+    targets: list[dict[str, object]] = []
+
+    for guild in client.guilds:
+        channels = get_twitter_update_channel_configs(guild.id)
+
+        if guild.id == SPECIAL_GUILD_ID:
+            channels.setdefault(str(SPECIAL_DEFAULT_CHANNEL_ID), {})
+
+        for channel_id_text, config in channels.items():
+            if not channel_id_text.isdigit():
+                continue
+
+            channel_id = int(channel_id_text)
+            stored_config = get_twitter_update_channel_config(guild.id, channel_id)
+
+            if not is_twitter_update_channel_enabled(guild.id, channel_id, stored_config):
+                continue
+
+            handles = _handles_from_channel_config(guild.id, channel_id, stored_config)
+
+            if not handles:
+                continue
+
+            targets.append(
+                {
+                    "guild_id": guild.id,
+                    "channel_id": channel_id,
+                    "handles": handles,
+                }
+            )
+
+    return targets
+
+
+async def resolve_twitter_update_channel(
     interaction: discord.Interaction,
     channel_id: str | None,
 ) -> discord.TextChannel | None:
     if channel_id:
-        channel_id = channel_id.strip()
+        channel_id_text = channel_id.strip()
 
-        if not channel_id.isdigit():
+        if not channel_id_text.isdigit():
             return None
 
-        channel = client.get_channel(int(channel_id))
+        channel = client.get_channel(int(channel_id_text))
 
         if channel is None:
             try:
-                channel = await client.fetch_channel(int(channel_id))
+                channel = await client.fetch_channel(int(channel_id_text))
             except discord.DiscordException:
                 return None
 
@@ -206,137 +292,302 @@ async def resolve_sega_facebook_channel(
     return interaction.channel if isinstance(interaction.channel, discord.TextChannel) else None
 
 
-def user_can_manage_sega_facebook(
-    interaction: discord.Interaction,
-    target_channel: discord.TextChannel,
-) -> bool:
+def can_manage_twitter_update(interaction: discord.Interaction, guild: discord.Guild) -> bool:
     if interaction.user.id == BOT_DEVELOPER_ID:
         return True
 
     if interaction.guild is None:
         return False
 
-    if interaction.guild.id != target_channel.guild.id:
+    if interaction.guild.id != guild.id:
         return False
 
     return can_manage_server(interaction)
 
 
-def format_sega_facebook_status(
-    interaction: discord.Interaction,
-    target_channel: discord.TextChannel | None,
-) -> str:
-    channels = get_sega_facebook_channels()
-    token_status = "설정됨" if FACEBOOK_ACCESS_TOKEN else "없음"
+def format_handle_list(handles: list[str]) -> str:
+    if not handles:
+        return "추적 중인 계정이 없습니다."
 
-    if target_channel is not None:
-        enabled_text = "켜짐" if str(target_channel.id) in channels else "꺼짐"
-        channel_text = target_channel.mention
-    else:
-        enabled_text = "확인할 채널 없음"
-        channel_text = "-"
+    return "\n".join(f"- @{handle} - https://x.com/{handle}" for handle in handles)
 
-    guild_id = interaction.guild.id if interaction.guild else None
-    enabled_channels = [
-        f"<#{channel_id}>"
-        for channel_id, stored_guild_id in channels.items()
-        if guild_id is not None and stored_guild_id == str(guild_id)
-    ]
 
-    if interaction.guild is None:
-        enabled_channels = [f"<#{channel_id}>" for channel_id in channels]
+def twitter_update_has_enabled_channel(guild_id: int) -> bool:
+    channels = get_twitter_update_channel_configs(guild_id)
 
-    enabled_channel_text = ", ".join(enabled_channels) if enabled_channels else "-"
+    if guild_id == SPECIAL_GUILD_ID:
+        channels.setdefault(str(SPECIAL_DEFAULT_CHANNEL_ID), {})
+
+    for channel_id_text in channels:
+        if not channel_id_text.isdigit():
+            continue
+
+        channel_id = int(channel_id_text)
+        config = get_twitter_update_channel_config(guild_id, channel_id)
+
+        if is_twitter_update_channel_enabled(guild_id, channel_id, config):
+            return True
+
+    return False
+
+
+def default_handles_for_new_channel(guild_id: int, channel_id: int) -> list[str]:
+    if guild_id == SPECIAL_GUILD_ID and channel_id == SPECIAL_DEFAULT_CHANNEL_ID:
+        return default_handles_for_guild(guild_id)
+
+    if twitter_update_has_enabled_channel(guild_id):
+        return []
+
+    return list(DEFAULT_HANDLES)
+
+
+def format_twitter_update_status(channel: discord.TextChannel) -> str:
+    config = get_twitter_update_channel_config(channel.guild.id, channel.id)
+    enabled = is_twitter_update_channel_enabled(channel.guild.id, channel.id, config)
+    handles = _handles_from_channel_config(channel.guild.id, channel.id, config)
+    token_status = "설정됨" if X_TOKEN else "없음"
 
     return (
-        f"이 채널 상태: {enabled_text}\n"
-        f"확인 채널: {channel_text}\n"
-        f"알림 켜진 채널: {enabled_channel_text}\n"
-        f"Facebook 토큰: {token_status}\n"
-        f"확인 주기: {SEGA_FACEBOOK_POLL_SECONDS}초"
+        f"서버: {channel.guild.name} (`{channel.guild.id}`)\n"
+        f"채널: {channel.mention} (`{channel.id}`)\n"
+        f"상태: {'활성화' if enabled else '비활성화'}\n"
+        f"X 토큰: {token_status}\n"
+        f"확인 주기: {TWITTER_UPDATE_POLL_SECONDS}초\n\n"
+        f"{format_handle_list(handles)}"
     )
 
 
-@tree.command(name="세가페북", description="세가 리듬게임 Facebook 새 게시물 알림을 관리합니다.")
-@app_commands.rename(action="동작", channel_id="채널id")
-@app_commands.describe(
-    action="비워두면 상태를 확인합니다.",
-    channel_id="DM에서 켜거나 끌 서버 채널 ID입니다. 서버에서는 비워두면 현재 채널을 사용합니다.",
-)
-@app_commands.choices(
-    action=[
-        app_commands.Choice(name="상태", value="status"),
-        app_commands.Choice(name="켜기", value="enable"),
-        app_commands.Choice(name="끄기", value="disable"),
-    ]
-)
-async def sega_facebook_command(
+@tree.command(name="트위터업뎃", description="현재 추적 중인 X 계정 목록을 확인합니다.")
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+@app_commands.rename(channel_id="채널id")
+@app_commands.describe(channel_id="DM에서 확인할 서버 채널 ID입니다. 서버에서는 비워두면 현재 채널을 확인합니다.")
+async def twitter_update_status(
     interaction: discord.Interaction,
-    action: app_commands.Choice[str] | None = None,
     channel_id: str | None = None,
 ):
-    selected_action = action.value if action else "status"
-    target_channel = await resolve_sega_facebook_channel(interaction, channel_id)
+    channel = await resolve_twitter_update_channel(interaction, channel_id)
 
-    if selected_action == "status":
-        if interaction.guild is None and interaction.user.id != BOT_DEVELOPER_ID:
-            await interaction.response.send_message(
-                "DM에서는 봇 관리자만 세가 Facebook 알림 상태를 확인할 수 있습니다.",
-                ephemeral=True,
-            )
-            return
-
+    if channel is None:
         await interaction.response.send_message(
-            format_sega_facebook_status(interaction, target_channel),
+            "확인할 채널을 찾지 못했습니다. DM에서는 `채널id`를 함께 입력해주세요.",
             ephemeral=True,
         )
         return
 
-    if target_channel is None:
+    if interaction.guild is None and interaction.user.id != BOT_DEVELOPER_ID:
         await interaction.response.send_message(
-            "알림을 관리할 텍스트 채널을 찾지 못했습니다. DM에서는 `채널id`를 함께 입력해주세요.",
+            "DM에서는 봇 관리자만 트위터 업뎃 상태를 확인할 수 있습니다.",
             ephemeral=True,
         )
         return
 
-    if not user_can_manage_sega_facebook(interaction, target_channel):
+    await interaction.response.send_message(format_twitter_update_status(channel), ephemeral=True)
+
+
+@tree.command(name="트위터업뎃-활성화", description="이 서버의 X 게시물 알림을 활성화합니다.")
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+@app_commands.rename(channel_id="채널id")
+@app_commands.describe(channel_id="DM에서 활성화할 서버 채널 ID입니다. 서버에서는 비워두면 현재 채널을 사용합니다.")
+async def twitter_update_enable(
+    interaction: discord.Interaction,
+    channel_id: str | None = None,
+):
+    channel = await resolve_twitter_update_channel(interaction, channel_id)
+
+    if channel is None:
         await interaction.response.send_message(
-            "서버 관리 권한이 있거나 봇 관리자일 때만 이 채널 알림을 변경할 수 있습니다.",
+            "알림을 보낼 텍스트 채널을 찾지 못했습니다. DM에서는 `채널id`를 함께 입력해주세요.",
             ephemeral=True,
         )
         return
 
-    if selected_action == "enable":
-        permissions = target_channel.permissions_for(target_channel.guild.me)
+    guild = channel.guild
 
-        if not permissions.send_messages or not permissions.embed_links:
-            await interaction.response.send_message(
-                f"{target_channel.mention}에 메시지와 임베드를 보낼 권한이 필요합니다.",
-                ephemeral=True,
-            )
-            return
-
-        set_sega_facebook_channel(target_channel.guild.id, target_channel.id)
-
-        if FACEBOOK_ACCESS_TOKEN:
-            note = "새 게시물 확인은 폴링 주기에 따라 진행됩니다."
-        else:
-            note = "다만 아직 `FACEBOOK_ACCESS_TOKEN`이 설정되지 않아 실제 확인은 시작되지 않았습니다."
-
+    if not can_manage_twitter_update(interaction, guild):
         await interaction.response.send_message(
-            f"세가 Facebook 알림을 {target_channel.mention} 채널에 켰습니다. {note}",
+            "서버 관리 권한이 있거나 봇 관리자일 때만 트위터 업뎃을 활성화할 수 있습니다.",
             ephemeral=True,
         )
         return
 
-    removed = remove_sega_facebook_channel(target_channel.id)
+    me = guild.me
 
-    if removed:
-        message = f"세가 Facebook 알림을 {target_channel.mention} 채널에서 껐습니다."
+    if me is None and client.user is not None:
+        me = guild.get_member(client.user.id)
+
+    if me is None and client.user is not None:
+        try:
+            me = await guild.fetch_member(client.user.id)
+        except discord.DiscordException:
+            me = None
+
+    if me is None:
+        await interaction.response.send_message("이 서버의 봇 권한을 확인하지 못했습니다.", ephemeral=True)
+        return
+
+    permissions = channel.permissions_for(me)
+
+    if not permissions.send_messages or not permissions.embed_links:
+        await interaction.response.send_message(
+            f"{channel.mention}에 메시지와 임베드를 보낼 권한이 필요합니다.",
+            ephemeral=True,
+        )
+        return
+
+    config = get_twitter_update_channel_config(guild.id, channel.id)
+    handles = _handles_from_channel_config(guild.id, channel.id, config)
+
+    if not handles and config is None:
+        handles = default_handles_for_new_channel(guild.id, channel.id)
+
+    set_twitter_update_channel_config(guild.id, channel.id, enabled=True, handles=handles)
+
+    if X_TOKEN:
+        note = "새 게시물 확인은 폴링 주기에 따라 진행됩니다."
     else:
-        message = f"{target_channel.mention} 채널에는 켜진 세가 Facebook 알림이 없습니다."
+        note = "다만 아직 `X_TOKEN`이 설정되지 않아 실제 확인은 시작되지 않았습니다."
 
-    await interaction.response.send_message(message, ephemeral=True)
+    await interaction.response.send_message(
+        f"트위터 업뎃을 {channel.mention} 채널에 활성화했습니다. {note}",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="트위터업뎃-추가", description="서버의 X 게시물 알림 추적 계정을 추가합니다.")
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+@app_commands.rename(account="계정", channel_id="채널id")
+@app_commands.describe(
+    account="추가할 계정 링크 또는 핸들입니다.",
+    channel_id="DM에서 수정할 서버 채널 ID입니다. 서버에서는 비워두면 현재 채널을 수정합니다.",
+)
+async def twitter_update_add(
+    interaction: discord.Interaction,
+    account: str,
+    channel_id: str | None = None,
+):
+    channel = await resolve_twitter_update_channel(interaction, channel_id)
+    handle = normalize_handle_text(account)
+
+    if channel is None:
+        await interaction.response.send_message(
+            "수정할 채널을 찾지 못했습니다. DM에서는 `채널id`를 함께 입력해주세요.",
+            ephemeral=True,
+        )
+        return
+
+    if not handle:
+        await interaction.response.send_message("계정 링크 또는 핸들 형식을 확인해주세요.", ephemeral=True)
+        return
+
+    if not can_manage_twitter_update(interaction, channel.guild):
+        await interaction.response.send_message(
+            "서버 관리 권한이 있거나 봇 관리자일 때만 트위터 업뎃 목록을 수정할 수 있습니다.",
+            ephemeral=True,
+        )
+        return
+
+    config = get_twitter_update_channel_config(channel.guild.id, channel.id)
+    handles = _handles_from_channel_config(channel.guild.id, channel.id, config)
+
+    if handle in handles:
+        await interaction.response.send_message(f"`@{handle}`은 이미 추적 중입니다.", ephemeral=True)
+        return
+
+    handles.append(handle)
+    set_twitter_update_channel_config(
+        channel.guild.id,
+        channel.id,
+        enabled=is_twitter_update_channel_enabled(channel.guild.id, channel.id, config),
+        handles=handles,
+    )
+
+    await interaction.response.send_message(f"`@{handle}`을 트위터 업뎃 목록에 추가했습니다.", ephemeral=True)
+
+
+@tree.command(name="트위터업뎃-삭제", description="서버의 X 게시물 알림 추적 계정을 삭제합니다.")
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+@app_commands.rename(account="계정", channel_id="채널id")
+@app_commands.describe(
+    account="삭제할 계정 링크 또는 핸들입니다.",
+    channel_id="DM에서 수정할 서버 채널 ID입니다. 서버에서는 비워두면 현재 채널을 수정합니다.",
+)
+async def twitter_update_remove(
+    interaction: discord.Interaction,
+    account: str,
+    channel_id: str | None = None,
+):
+    channel = await resolve_twitter_update_channel(interaction, channel_id)
+    handle = normalize_handle_text(account)
+
+    if channel is None:
+        await interaction.response.send_message(
+            "수정할 채널을 찾지 못했습니다. DM에서는 `채널id`를 함께 입력해주세요.",
+            ephemeral=True,
+        )
+        return
+
+    if not handle:
+        await interaction.response.send_message("계정 링크 또는 핸들 형식을 확인해주세요.", ephemeral=True)
+        return
+
+    if not can_manage_twitter_update(interaction, channel.guild):
+        await interaction.response.send_message(
+            "서버 관리 권한이 있거나 봇 관리자일 때만 트위터 업뎃 목록을 수정할 수 있습니다.",
+            ephemeral=True,
+        )
+        return
+
+    config = get_twitter_update_channel_config(channel.guild.id, channel.id)
+    handles = _handles_from_channel_config(channel.guild.id, channel.id, config)
+
+    if handle not in handles:
+        await interaction.response.send_message(f"`@{handle}`은 현재 추적 목록에 없습니다.", ephemeral=True)
+        return
+
+    handles.remove(handle)
+    set_twitter_update_channel_config(
+        channel.guild.id,
+        channel.id,
+        enabled=is_twitter_update_channel_enabled(channel.guild.id, channel.id, config),
+        handles=handles,
+    )
+
+    await interaction.response.send_message(f"`@{handle}`을 트위터 업뎃 목록에서 삭제했습니다.", ephemeral=True)
+
+
+@tree.command(name="트위터업뎃-비활성화", description="이 서버의 X 게시물 알림을 비활성화합니다.")
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+@app_commands.rename(channel_id="채널id")
+@app_commands.describe(channel_id="DM에서 비활성화할 서버 채널 ID입니다. 서버에서는 비워두면 현재 채널을 비활성화합니다.")
+async def twitter_update_disable(
+    interaction: discord.Interaction,
+    channel_id: str | None = None,
+):
+    channel = await resolve_twitter_update_channel(interaction, channel_id)
+
+    if channel is None:
+        await interaction.response.send_message(
+            "비활성화할 채널을 찾지 못했습니다. DM에서는 `채널id`를 함께 입력해주세요.",
+            ephemeral=True,
+        )
+        return
+
+    if not can_manage_twitter_update(interaction, channel.guild):
+        await interaction.response.send_message(
+            "서버 관리 권한이 있거나 봇 관리자일 때만 트위터 업뎃을 비활성화할 수 있습니다.",
+            ephemeral=True,
+        )
+        return
+
+    config = get_twitter_update_channel_config(channel.guild.id, channel.id)
+    set_twitter_update_channel_config(
+        channel.guild.id,
+        channel.id,
+        enabled=False,
+        handles=_handles_from_channel_config(channel.guild.id, channel.id, config),
+    )
+
+    await interaction.response.send_message(f"{channel.mention} 채널의 트위터 업뎃을 비활성화했습니다.", ephemeral=True)
 
 
 @tree.command(name="help", description=get_message("slash.help_description"))
@@ -357,12 +608,7 @@ async def on_message(message: discord.Message):
         return
 
     if message.guild is None:
-        handled = await handle_developer_dm_command(message, client, BOT_DEVELOPER_ID)
-
-        if handled:
-            return
-
-        await handle_user_dm_command(message, client)
+        await handle_developer_dm_command(message, client, BOT_DEVELOPER_ID)
         return
 
     content = message.content.strip()

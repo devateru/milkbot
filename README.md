@@ -5,13 +5,12 @@ random personal discord bot
 
 - `DISCORD_TOKEN`: Discord bot token
 - `BOT_DEVELOPER_ID`: bot developer Discord user ID
-- `FACEBOOK_ACCESS_TOKEN`: Facebook Graph API token used by `/세가페북`.
-  Public page feeds require a token with Facebook's page content access, or a page token for pages you manage.
-- `SEGA_FACEBOOK_POLL_SECONDS`: Facebook post check interval, default `60`
+- `X_TOKEN`: X API bearer token used by `/트위터업뎃`
+- `TWITTER_UPDATE_POLL_SECONDS`: X post check interval, default `60`
 
 ideas/TODOs
 
-- fix the gameplaza live checker thingy
+- v fix the gameplaza live checker thingy
 
 - choose song by random \
   user can choose range of difficulty, randomly chooses ridiculus levels at small chance \
@@ -52,6 +51,6 @@ ideas/TODOs
 - git push notification
   dm me when bot gets update
 
-- check performai international facebook account message
+- v check performai international account message
 
--smth fun idk
+- smth fun idk

@@ -1,142 +1,173 @@
-import random
+from collections import Counter
 
 import discord
+from discord import app_commands
 
-from messages import get_command_lines, get_message
-from storage import add_treat, get_allowed_guild_ids, get_treats
+from messages import get_message
+from storage import (
+    add_guild_treat,
+    get_allowed_guild_ids,
+    get_guild_treat_rules,
+    remove_guild_treat,
+)
 
-TREAT_YES_RATE = 0.03
+
+def is_treat_enabled_guild(guild_id: int) -> bool:
+    return str(guild_id) in get_allowed_guild_ids()
 
 
-def format_treat_list(uid: int) -> str:
-    treats = get_treats(uid)
+def _format_flexible_label(flexible: bool) -> str:
+    message_key = "treat.flexible_on" if flexible else "treat.flexible_off"
+    return get_message(message_key)
 
-    if not treats:
+
+def format_guild_treat_list(guild_id: int) -> str:
+    rules = get_guild_treat_rules(guild_id)
+
+    if not rules:
         return get_message("treat.empty_list")
 
-    return "\n".join(f"{idx + 1}. `{treat}`" for idx, treat in enumerate(treats))
+    return "\n".join(
+        f"{idx + 1}. `{rule['treat']}` ({_format_flexible_label(bool(rule['flexible']))})"
+        for idx, rule in enumerate(rules)
+    )
 
 
-async def is_member_of_allowed_guild(client: discord.Client, user_id: int) -> bool:
-    for guild_id in get_allowed_guild_ids():
-        guild = client.get_guild(int(guild_id))
+async def _enabled_guild_id(interaction: discord.Interaction) -> int | None:
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            get_message("treat.guild_only"),
+            ephemeral=True,
+        )
+        return None
 
-        if guild is None:
-            continue
-
-        if guild.get_member(user_id) is not None:
-            return True
-
-        try:
-            await guild.fetch_member(user_id)
-            return True
-        except discord.NotFound:
-            continue
-        except discord.Forbidden:
-            continue
-        except discord.HTTPException:
-            continue
-
-    return False
-
-
-async def get_user_text_command_lines(client: discord.Client, user_id: int) -> list[str]:
-    if not await is_member_of_allowed_guild(client, user_id):
-        return []
-
-    return get_command_lines("user_treat_list", "user_treat_add", "user_treat_help")
-
-
-async def send_user_command_menu(message: discord.Message, client: discord.Client) -> None:
-    command_lines = await get_user_text_command_lines(client, message.author.id)
-
-    if not command_lines:
-        await message.reply(
+    if not is_treat_enabled_guild(interaction.guild.id):
+        await interaction.response.send_message(
             get_message("treat.no_access"),
-            mention_author=False,
-            allowed_mentions=discord.AllowedMentions.none(),
+            ephemeral=True,
+        )
+        return None
+
+    return interaction.guild.id
+
+
+treat_group = app_commands.Group(
+    name="treat",
+    description=get_message("slash.treat_description"),
+)
+
+
+@treat_group.command(name="add", description=get_message("slash.treat_add_description"))
+@app_commands.describe(
+    treat=get_message("treat.option_treat_add"),
+    flexible=get_message("treat.option_flexible"),
+)
+async def treat_add_command(
+    interaction: discord.Interaction,
+    treat: str,
+    flexible: bool = False,
+) -> None:
+    guild_id = await _enabled_guild_id(interaction)
+
+    if guild_id is None:
+        return
+
+    treat = treat.strip()
+
+    if not treat:
+        await interaction.response.send_message(
+            get_message("treat.empty_rejected"),
+            ephemeral=True,
         )
         return
 
-    await message.reply(
-        get_message("treat.available_commands", commands="\n".join(command_lines)),
-        mention_author=False,
-        allowed_mentions=discord.AllowedMentions.none(),
-    )
-
-
-async def handle_user_dm_command(message: discord.Message, client: discord.Client) -> bool:
-    content = message.content.strip()
-
-    if content != "!m" and not content.startswith("!m "):
-        return False
-
-    if content == "!m":
-        await send_user_command_menu(message, client)
-        return True
-
-    if content != "!m treat" and not content.startswith("!m treat "):
-        await message.reply(
-            get_message("treat.unknown_user_command"),
-            mention_author=False,
-            allowed_mentions=discord.AllowedMentions.none(),
+    if add_guild_treat(guild_id, treat, flexible):
+        response = get_message(
+            "treat.added",
+            treat=treat,
+            flexible=_format_flexible_label(flexible),
         )
-        return True
-
-    if not await is_member_of_allowed_guild(client, message.author.id):
-        await message.reply(
-            get_message("treat.no_access"),
-            mention_author=False,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-        return True
-
-    raw_treat = content[len("!m treat"):].strip()
-
-    if not raw_treat:
-        await message.reply(
-            get_message("treat.list", treats=format_treat_list(message.author.id)),
-            mention_author=False,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-        return True
-
-    if raw_treat == "help":
-        await message.reply(
-            get_message("treat.help_url"),
-            mention_author=False,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-        return True
-
-    if add_treat(message.author.id, raw_treat):
-        response = get_message("treat.added", treat=raw_treat)
     else:
-        response = get_message("treat.already_exists", treat=raw_treat)
+        response = get_message("treat.already_exists", treat=treat)
 
-    await message.reply(
-        response,
-        mention_author=False,
-        allowed_mentions=discord.AllowedMentions.none(),
+    await interaction.response.send_message(response, ephemeral=True)
+
+
+@treat_group.command(name="delete", description=get_message("slash.treat_delete_description"))
+@app_commands.describe(treat=get_message("treat.option_treat_delete"))
+async def treat_delete_command(
+    interaction: discord.Interaction,
+    treat: str,
+) -> None:
+    guild_id = await _enabled_guild_id(interaction)
+
+    if guild_id is None:
+        return
+
+    treat = treat.strip()
+
+    if not treat:
+        await interaction.response.send_message(
+            get_message("treat.empty_rejected"),
+            ephemeral=True,
+        )
+        return
+
+    if remove_guild_treat(guild_id, treat):
+        response = get_message("treat.deleted", treat=treat)
+    else:
+        response = get_message("treat.not_registered", treat=treat)
+
+    await interaction.response.send_message(response, ephemeral=True)
+
+
+@treat_group.command(name="list", description=get_message("slash.treat_list_description"))
+async def treat_list_command(interaction: discord.Interaction) -> None:
+    guild_id = await _enabled_guild_id(interaction)
+
+    if guild_id is None:
+        return
+
+    await interaction.response.send_message(
+        get_message("treat.list", treats=format_guild_treat_list(guild_id)),
+        ephemeral=True,
     )
-    return True
+
+
+def register_treat_command(tree: app_commands.CommandTree) -> None:
+    tree.add_command(treat_group)
+
+
+def _contains_treat_characters(message_text: str, treat: str) -> bool:
+    message_counts = Counter(char for char in message_text if not char.isspace())
+    treat_counts = Counter(char for char in treat if not char.isspace())
+
+    return bool(treat_counts) and all(
+        message_counts[char] >= count
+        for char, count in treat_counts.items()
+    )
+
+
+def _message_matches_treat(message_text: str, treat: str, flexible: bool) -> bool:
+    if flexible:
+        return _contains_treat_characters(message_text, treat)
+
+    return message_text == treat or message_text == f"{treat}?"
 
 
 async def handle_notreat(message: discord.Message) -> None:
-    if message.guild is None:
+    if message.guild is None or not is_treat_enabled_guild(message.guild.id):
         return
 
     text = message.content.strip()
 
-    for treat in get_treats(message.author.id):
-        if text == treat or text == f"{treat}?":
-            message_key = (
-                "treat.yes_reply"
-                if random.random() < TREAT_YES_RATE
-                else "treat.notreat_reply"
-            )
+    for rule in get_guild_treat_rules(message.guild.id):
+        treat = str(rule.get("treat", "")).strip()
+        flexible = bool(rule.get("flexible", False))
+
+        if treat and _message_matches_treat(text, treat, flexible):
             await message.reply(
-                get_message(message_key, treat=treat),
+                get_message("treat.notreat_reply", treat=treat),
                 mention_author=False,
                 allowed_mentions=discord.AllowedMentions.none(),
             )

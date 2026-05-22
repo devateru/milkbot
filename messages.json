@@ -11,7 +11,11 @@
     "maimai_song_description": "maimai DX 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
     "chunithm_song_description": "CHUNITHM 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
     "maimai_song_preset_description": "마이선곡 기본 옵션 프리셋을 저장하거나 초기화합니다.",
-    "chunithm_song_preset_description": "츄니선곡 기본 옵션 프리셋을 저장하거나 초기화합니다."
+    "chunithm_song_preset_description": "츄니선곡 기본 옵션 프리셋을 저장하거나 초기화합니다.",
+    "treat_description": "서버 treat 자동 응답을 관리합니다.",
+    "treat_add_description": "이 서버에 treat을 추가합니다.",
+    "treat_delete_description": "이 서버에서 treat을 삭제합니다.",
+    "treat_list_description": "이 서버의 treat 목록을 확인합니다."
   },
   "random_song": {
     "option_min_level": "이 보면상수 이상에서 선곡합니다. 비워두면 전체 채보에서 뽑습니다.",
@@ -70,62 +74,48 @@
     "option_chunithm_chart_type": "STANDARD, WORLD'S END 중 선택."
   },
   "treat": {
-    "empty_list": "등록된 treat이 없습니다.",
-    "list": "현재 내 treat 목록입니다.\n\n{treats}\n\n추가하려면 `!m treat 텍스트` 형식으로 다시 입력해주세요.",
-    "added": "`{treat}`을 내 treat로 추가했습니다.\n이제 내가 `{treat}` 또는 `{treat}?`라고 말하면 밀크봇이 `no {treat}`으로 답합니다.",
-    "already_exists": "`{treat}`은 이미 등록되어 있습니다.",
-    "empty_rejected": "빈 treat은 추가할 수 없습니다.",
-    "help_url": "https://www.youtube.com/watch?v=uVwcHmtQYN8",
-    "no_access": "현재 사용할 수 있는 treat 명령어가 없습니다.",
-    "available_commands": "사용 가능한 명령어입니다.\n\n{commands}",
-    "unknown_user_command": "알 수 없는 명령어입니다. `!m`으로 사용 가능한 명령어를 확인하세요.",
-    "notreat_reply": "no {treat}",
-    "yes_reply": "yes {treat}"
+    "empty_list": "이 서버에 등록된 treat이 없습니다.",
+    "list": "이 서버의 treat 목록입니다.\n\n{treats}",
+    "added": "`{treat}`을 이 서버 treat으로 추가했습니다. 매칭: {flexible}",
+    "already_exists": "`{treat}`은 이미 이 서버에 등록되어 있습니다.",
+    "deleted": "`{treat}`을 이 서버 treat에서 삭제했습니다.",
+    "not_registered": "`{treat}`은 이 서버에 등록되어 있지 않습니다.",
+    "empty_rejected": "빈 treat은 사용할 수 없습니다.",
+    "guild_only": "이 명령어는 서버에서만 사용할 수 있습니다.",
+    "no_access": "이 서버에서는 treat 기능이 활성화되어 있지 않습니다.",
+    "option_treat_add": "추가할 treat 텍스트입니다.",
+    "option_treat_delete": "삭제할 treat 텍스트입니다.",
+    "option_flexible": "켜면 treat의 각 문자가 메시지에 포함될 때도 반응합니다. 기본값은 false입니다.",
+    "flexible_on": "flexible",
+    "flexible_off": "exact",
+    "notreat_reply": "no {treat}"
   },
   "developer": {
     "unknown_command": "알 수 없는 명령어입니다. `!m help`로 도움말을 확인하세요.",
-    "sonic_already_active": "이미 이 DM 채널에서 sonic 설정이 진행 중입니다. 먼저 `종료` 버튼을 눌러주세요.",
-    "sonic_invalid_uid": "UID 또는 유저 멘션을 인식하지 못했습니다. `!m sonic`으로 다시 시작해주세요.",
-    "sonic_add_prompt": "추가할 treat 텍스트를 입력해주세요.",
-    "sonic_delete_prompt": "삭제할 treat 텍스트를 입력해주세요.",
-    "sonic_add_empty": "빈 treat은 추가할 수 없습니다.",
-    "sonic_delete_empty": "빈 treat은 삭제할 수 없습니다.",
-    "sonic_added": "`{treat}`을 추가했습니다.",
-    "sonic_already_exists": "`{treat}`은 이미 등록되어 있습니다.",
-    "sonic_deleted": "`{treat}`을 삭제했습니다.",
-    "sonic_not_registered": "`{treat}`은 등록되어 있지 않습니다.",
-    "sonic_delete_no_items": "삭제할 treat이 없습니다.",
-    "sonic_not_developer": "이 메뉴는 봇 개발자만 사용할 수 있습니다.",
-    "allowed_guild_added": "`{guild_id}` 서버를 treat 허용 목록에 추가했습니다.",
-    "allowed_guild_exists": "`{guild_id}` 서버는 이미 treat 허용 목록에 있습니다.",
-    "allowed_guild_removed": "`{guild_id}` 서버를 treat 허용 목록에서 삭제했습니다.",
-    "allowed_guild_missing": "`{guild_id}` 서버는 treat 허용 목록에 없습니다.",
-    "allowed_guild_list_empty": "treat 허용 서버가 없습니다.",
-    "allowed_guild_list": "treat 허용 서버 목록입니다.\n\n{guilds}",
+    "allowed_guild_added": "`{guild_id}` 서버에서 treat 기능을 활성화했습니다.",
+    "allowed_guild_exists": "`{guild_id}` 서버는 이미 treat 기능이 활성화되어 있습니다.",
+    "allowed_guild_removed": "`{guild_id}` 서버에서 treat 기능을 비활성화했습니다.",
+    "allowed_guild_missing": "`{guild_id}` 서버는 treat 기능이 활성화되어 있지 않습니다.",
+    "allowed_guild_list_empty": "treat 기능이 활성화된 서버가 없습니다.",
+    "allowed_guild_list": "treat 기능 활성화 서버 목록입니다.\n\n{guilds}",
     "allowed_guild_invalid": "서버 ID 형식이 올바르지 않습니다. 예: `!m guild add 123456789012345678`"
   },
   "commands": {
     "slash_help": "`/help` - 사용 가능한 명령어를 확인합니다.",
     "slash_ping": "`/ping` - 밀크봇이 응답하는지 확인합니다.",
     "slash_gameplaza": "`/겜플라이브` - 게임플라자 라이브 상태를 확인합니다.",
-    "slash_sega_facebook": "`/세가페북` - maimai DX / CHUNITHM Facebook 새 게시물 알림을 관리합니다.",
+    "slash_twitter_update": "`/트위터업뎃` - 서버에서 추적 중인 X 계정 새 게시물 알림 목록을 확인합니다.",
     "slash_maimai_song": "`/마이선곡` - maimai DX 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
     "slash_chunithm_song": "`/츄니선곡` - CHUNITHM 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
     "slash_maimai_song_preset": "`/마이선곡-프리셋` - 마이선곡 기본 옵션 프리셋을 저장하거나 초기화합니다.",
     "slash_chunithm_song_preset": "`/츄니선곡-프리셋` - 츄니선곡 기본 옵션 프리셋을 저장하거나 초기화합니다.",
-    "user_treat_list": "`!m treat` - 내 treat 목록을 확인합니다.",
-    "user_treat_add": "`!m treat {treat}` - 내 treat을 추가합니다.",
-    "user_treat_help": "`!m treat help` - treat 도움말 영상을 확인합니다.",
+    "slash_treat_add": "`/treat add` - 이 서버에 treat을 추가합니다.",
+    "slash_treat_delete": "`/treat delete` - 이 서버에서 treat을 삭제합니다.",
+    "slash_treat_list": "`/treat list` - 이 서버의 treat 목록을 확인합니다.",
     "dev_help": "`!m help` - 개발자 명령어 도움말을 확인합니다.",
-    "dev_sonic": "`!m sonic` - 유저별 treat 관리 메뉴를 엽니다.",
-    "dev_guild_list": "`!m guild list` - treat 허용 서버 목록을 확인합니다.",
-    "dev_guild_add": "`!m guild add {guild_id}` - treat 허용 서버를 추가합니다.",
-    "dev_guild_remove": "`!m guild remove {guild_id}` - treat 허용 서버를 삭제합니다."
-  },
-  "buttons": {
-    "sonic_add": "treat 추가",
-    "sonic_delete": "treat 삭제",
-    "sonic_close": "종료"
+    "dev_guild_list": "`!m guild list` - treat 기능 활성화 서버 목록을 확인합니다.",
+    "dev_guild_add": "`!m guild add 서버ID` - treat 기능을 활성화할 서버를 추가합니다.",
+    "dev_guild_remove": "`!m guild remove 서버ID` - treat 기능을 비활성화할 서버를 삭제합니다."
   },
   "embeds": {
     "developer_help": {
@@ -138,12 +128,7 @@
           "inline": false
         },
         {
-          "name": "!m sonic",
-          "value": "{dev_sonic}",
-          "inline": false
-        },
-        {
-          "name": "treat 허용 서버",
+          "name": "treat 활성화 서버",
           "value": "{dev_guild_list}\n{dev_guild_add}\n{dev_guild_remove}",
           "inline": false
         }
@@ -155,50 +140,18 @@
       "fields": [
         {
           "name": "슬래시 명령어",
-          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_sega_facebook}\n{slash_maimai_song}\n{slash_chunithm_song}\n{slash_maimai_song_preset}\n{slash_chunithm_song_preset}",
+          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_twitter_update}\n{slash_maimai_song}\n{slash_chunithm_song}\n{slash_maimai_song_preset}\n{slash_chunithm_song_preset}",
           "inline": false
         }
       ]
     },
     "server_help_treat": {
-      "title": "이 서버 멤버용 DM 명령어",
-      "description": "이 서버가 treat 허용 목록에 있어, 서버 멤버는 밀크봇 DM에서 아래 명령어를 사용할 수 있습니다.",
+      "title": "이 서버용 treat 명령어",
+      "description": "이 서버가 treat 허용 목록에 있어, 서버 단위 treat 자동 응답을 사용할 수 있습니다.",
       "fields": [
         {
           "name": "treat",
-          "value": "{user_treat_list}\n{user_treat_add}\n{user_treat_help}",
-          "inline": false
-        }
-      ]
-    },
-    "sonic_intro": {
-      "title": "sonic 설정",
-      "description": "특정 유저가 등록된 treat 또는 treat?를 말하면 밀크봇이 해당 메시지에 `no treat`로 답합니다.",
-      "fields": [
-        {
-          "name": "시작 방법",
-          "value": "설정할 유저의 UID 또는 멘션을 이 DM에 보내주세요.",
-          "inline": false
-        },
-        {
-          "name": "예시",
-          "value": "`123456789012345678`\n`@user`",
-          "inline": false
-        }
-      ]
-    },
-    "sonic_menu": {
-      "title": "sonic 설정",
-      "description": "대상 UID: `{uid}`",
-      "fields": [
-        {
-          "name": "현재 treat 목록",
-          "value": "{treats}",
-          "inline": false
-        },
-        {
-          "name": "동작",
-          "value": "아래 버튼으로 treat을 추가하거나 삭제할 수 있습니다.",
+          "value": "{slash_treat_add}\n{slash_treat_delete}\n{slash_treat_list}",
           "inline": false
         }
       ]

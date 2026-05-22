@@ -309,7 +309,7 @@ def format_handle_list(handles: list[str]) -> str:
     if not handles:
         return "추적 중인 계정이 없습니다."
 
-    return "\n".join(f"- @{handle} - https://x.com/{handle}" for handle in handles)
+    return "\n".join(f"- @{handle} - <https://x.com/{handle}>" for handle in handles)
 
 
 def twitter_update_has_enabled_channel(guild_id: int) -> bool:
@@ -357,31 +357,37 @@ def format_twitter_update_status(channel: discord.TextChannel) -> str:
     )
 
 
+def format_twitter_update_dm_status(channel: discord.abc.PrivateChannel) -> str:
+    return (
+        f"DM 채널: `{channel.id}`\n"
+        "상태: 비활성화\n"
+        f"X 토큰: {'설정됨' if X_TOKEN else '없음'}\n"
+        f"확인 주기: {TWITTER_UPDATE_POLL_SECONDS}초\n\n"
+        "추적 중인 계정이 없습니다."
+    )
+
+
 @tree.command(name="트위터업뎃", description="현재 추적 중인 X 계정 목록을 확인합니다.")
 @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-@app_commands.rename(channel_id="채널id")
-@app_commands.describe(channel_id="DM에서 확인할 서버 채널 ID입니다. 서버에서는 비워두면 현재 채널을 확인합니다.")
-async def twitter_update_status(
-    interaction: discord.Interaction,
-    channel_id: str | None = None,
-):
-    channel = await resolve_twitter_update_channel(interaction, channel_id)
-
-    if channel is None:
+async def twitter_update_status(interaction: discord.Interaction):
+    if isinstance(interaction.channel, discord.TextChannel):
         await interaction.response.send_message(
-            "확인할 채널을 찾지 못했습니다. DM에서는 `채널id`를 함께 입력해주세요.",
+            format_twitter_update_status(interaction.channel),
             ephemeral=True,
         )
         return
 
-    if interaction.guild is None and interaction.user.id != BOT_DEVELOPER_ID:
+    if isinstance(interaction.channel, discord.abc.PrivateChannel):
         await interaction.response.send_message(
-            "DM에서는 봇 관리자만 트위터 업뎃 상태를 확인할 수 있습니다.",
+            format_twitter_update_dm_status(interaction.channel),
             ephemeral=True,
         )
         return
 
-    await interaction.response.send_message(format_twitter_update_status(channel), ephemeral=True)
+    await interaction.response.send_message(
+        "현재 채널의 트위터 업뎃 상태를 확인할 수 없습니다.",
+        ephemeral=True,
+    )
 
 
 @tree.command(name="트위터업뎃-활성화", description="이 서버의 X 게시물 알림을 활성화합니다.")

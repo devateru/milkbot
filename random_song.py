@@ -703,8 +703,8 @@ async def calculate_level_probabilities(
 
 
 LocationEntry = tuple[int, dict[str, Any], dict[str, Any]]
-LocationFolder = tuple[str, list[LocationEntry], bool]
-LocationSort = tuple[str, Any, bool]
+LocationFolder = tuple[str, list[LocationEntry], bool, bool]
+LocationSort = tuple[str, Any, bool, str]
 
 
 def _same_unlock_state(pick: SongPick, song: dict[str, Any]) -> bool:
@@ -777,20 +777,24 @@ def _maimai_location_folder_candidates(data: dict[str, Any], pick: SongPick) -> 
             get_message("random_song.location_folder_genre", value=_field_value(pick.song.get("category"))),
             [entry for entry in song_entries if entry[1].get("category") == pick.song.get("category")],
             True,
+            True,
         ),
         (
             get_message("random_song.location_folder_level", value=pick_level),
             [entry for entry in chart_entries if _field_value(entry[2].get("level")) == pick_level],
             False,
+            True,
         ),
         (
             get_message("random_song.location_folder_version", value=pick_version),
             [entry for entry in song_entries if _field_value(entry[1].get("version")) == pick_version],
             True,
+            True,
         ),
         (
             get_message("random_song.location_folder_all"),
             song_entries,
+            True,
             True,
         ),
     ]
@@ -806,15 +810,18 @@ def _chunithm_location_folder_candidates(data: dict[str, Any], pick: SongPick) -
             get_message("random_song.location_folder_genre", value=_field_value(pick.song.get("category"))),
             [entry for entry in song_entries if entry[1].get("category") == pick.song.get("category")],
             True,
+            True,
         ),
         (
             get_message("random_song.location_folder_version", value=pick_version),
             [entry for entry in song_entries if _field_value(entry[1].get("version")) == pick_version],
             True,
+            True,
         ),
         (
             get_message("random_song.location_folder_level", value=pick_level),
             [entry for entry in chart_entries if _field_value(entry[2].get("level")) == pick_level],
+            False,
             False,
         ),
     ]
@@ -823,6 +830,7 @@ def _chunithm_location_folder_candidates(data: dict[str, Any], pick: SongPick) -
             (
                 get_message("random_song.location_folder_ultima"),
                 [entry for entry in chart_entries if entry[2].get("difficulty") == "ultima"],
+                False,
                 False,
             )
         )
@@ -839,8 +847,8 @@ def _location_folder_candidates(data: dict[str, Any], pick: SongPick) -> list[Lo
 
 def _maimai_location_sort_candidates() -> list[LocationSort]:
     return [
-        (get_message("random_song.location_sort_recommended"), lambda entry: (entry[0],), False),
-        (get_message("random_song.location_sort_title"), lambda entry: (_sort_text(entry[1].get("title")), entry[0]), False),
+        (get_message("random_song.location_sort_recommended"), lambda entry: (entry[0],), False, "recommended"),
+        (get_message("random_song.location_sort_title"), lambda entry: (_sort_text(entry[1].get("title")), entry[0]), False, "title"),
         (
             get_message("random_song.location_sort_level"),
             lambda entry: (
@@ -850,16 +858,19 @@ def _maimai_location_sort_candidates() -> list[LocationSort]:
                 entry[0],
             ),
             False,
+            "level",
         ),
         (
             get_message("random_song.location_sort_release"),
             lambda entry: (_field_value(entry[1].get("releaseDate")), _sort_text(entry[1].get("title")), entry[0]),
             False,
+            "release",
         ),
         (
             get_message("random_song.location_sort_bpm"),
             lambda entry: (_sort_number(entry[1].get("bpm")), _sort_text(entry[1].get("title")), entry[0]),
             False,
+            "bpm",
         ),
     ]
 
@@ -877,12 +888,14 @@ def _chunithm_location_sort_candidates() -> list[LocationSort]:
             get_message("random_song.location_sort_genre"),
             lambda entry: (_sort_text(entry[1].get("category")), _sort_text(entry[1].get("title")), entry[0]),
             False,
+            "genre",
         ),
-        (get_message("random_song.location_sort_title"), lambda entry: (_sort_text(entry[1].get("title")), entry[0]), False),
+        (get_message("random_song.location_sort_title"), lambda entry: (_sort_text(entry[1].get("title")), entry[0]), False, "title"),
         (
             get_message("random_song.location_sort_release"),
             lambda entry: (_field_value(entry[1].get("releaseDate")), _sort_text(entry[1].get("title")), entry[0]),
             False,
+            "release",
         ),
         (
             get_message("random_song.location_sort_level_chunithm"),
@@ -893,6 +906,7 @@ def _chunithm_location_sort_candidates() -> list[LocationSort]:
                 entry[0],
             ),
             False,
+            "level",
         ),
     ]
     descending_sorts = [
@@ -900,8 +914,9 @@ def _chunithm_location_sort_candidates() -> list[LocationSort]:
             _descending_sort_label(sort_label),
             sort_key,
             True,
+            sort_kind,
         )
-        for sort_label, sort_key, _ in base_sorts
+        for sort_label, sort_key, _, sort_kind in base_sorts
     ]
     return base_sorts + descending_sorts
 
@@ -931,10 +946,12 @@ def _location_total(pick: SongPick, entries: list[LocationEntry]) -> int:
 
 def song_location_candidates(pick: SongPick, data: dict[str, Any], limit: int = 3) -> list[SongLocationCandidate]:
     candidates: list[SongLocationCandidate] = []
-    for folder_label, folder_entries, song_only in _location_folder_candidates(data, pick):
+    for folder_label, folder_entries, song_only, allow_level_sort in _location_folder_candidates(data, pick):
         if not folder_entries:
             continue
-        for sort_label, sort_key, descending in _location_sort_candidates(pick):
+        for sort_label, sort_key, descending, sort_kind in _location_sort_candidates(pick):
+            if sort_kind == "level" and not allow_level_sort:
+                continue
             sorted_entries = sorted(folder_entries, key=sort_key, reverse=descending)
             for index, entry in enumerate(sorted_entries, start=1):
                 if _is_picked_entry(entry, pick, song_only):

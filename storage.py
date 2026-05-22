@@ -31,6 +31,7 @@ def default_state() -> dict[str, Any]:
         "treat_allowed_guild_ids": [],
         "guild_treat_rules": {},
         "twitter_update_guilds": {},
+        "twitter_update_dm_channels": {},
         "twitter_update_seen_tweet_ids": {},
         "random_song_presets": {},
         "random_song_unconfigured_warnings": {},
@@ -154,6 +155,36 @@ def load_state() -> dict[str, Any]:
             if handle_text and tweet_id_text:
                 fixed_seen_tweet_ids[handle_text] = tweet_id_text
 
+    twitter_update_dm_channels = data.get("twitter_update_dm_channels", {})
+    fixed_twitter_update_dm_channels: dict[str, dict[str, object]] = {}
+
+    if isinstance(twitter_update_dm_channels, dict):
+        for channel_id, config in twitter_update_dm_channels.items():
+            channel_id_text = str(channel_id).strip()
+
+            if not channel_id_text.isdigit() or not isinstance(config, dict):
+                continue
+
+            user_id = str(config.get("user_id", "")).strip()
+            handles = config.get("handles", [])
+            fixed_handles: list[str] = []
+
+            if isinstance(handles, list):
+                for handle in handles:
+                    handle_text = normalize_handle_text(handle)
+                    if handle_text and handle_text not in fixed_handles:
+                        fixed_handles.append(handle_text)
+
+            fixed_config: dict[str, object] = {
+                "enabled": bool(config.get("enabled", False)),
+                "handles": fixed_handles,
+            }
+
+            if user_id.isdigit():
+                fixed_config["user_id"] = user_id
+
+            fixed_twitter_update_dm_channels[channel_id_text] = fixed_config
+
     random_song_presets = data.get("random_song_presets", {})
     fixed_random_song_presets: dict[str, dict[str, dict[str, object]]] = {}
 
@@ -214,6 +245,7 @@ def load_state() -> dict[str, Any]:
         "treat_allowed_guild_ids": fixed_guild_ids,
         "guild_treat_rules": fixed_guild_treat_rules,
         "twitter_update_guilds": fixed_twitter_update_guilds,
+        "twitter_update_dm_channels": fixed_twitter_update_dm_channels,
         "twitter_update_seen_tweet_ids": fixed_seen_tweet_ids,
         "random_song_presets": fixed_random_song_presets,
         "random_song_unconfigured_warnings": fixed_random_song_unconfigured_warnings,
@@ -406,6 +438,66 @@ def set_twitter_update_channel_config(
 
     channels[channel_id_text] = {
         "enabled": enabled,
+        "handles": fixed_handles,
+    }
+    save_state()
+
+
+def get_twitter_update_dm_channel_config(channel_id: int) -> dict[str, object] | None:
+    configs = state.setdefault("twitter_update_dm_channels", {})
+
+    if not isinstance(configs, dict):
+        state["twitter_update_dm_channels"] = {}
+        return None
+
+    config = configs.get(str(channel_id))
+    return dict(config) if isinstance(config, dict) else None
+
+
+def get_twitter_update_dm_channel_configs() -> dict[str, dict[str, object]]:
+    configs = state.setdefault("twitter_update_dm_channels", {})
+
+    if not isinstance(configs, dict):
+        state["twitter_update_dm_channels"] = {}
+        return {}
+
+    return {
+        str(channel_id): dict(config)
+        for channel_id, config in configs.items()
+        if str(channel_id).isdigit() and isinstance(config, dict)
+    }
+
+
+def set_twitter_update_dm_channel_config(
+    channel_id: int | str,
+    user_id: int | str,
+    *,
+    enabled: bool,
+    handles: list[str],
+) -> None:
+    configs = state.setdefault("twitter_update_dm_channels", {})
+
+    if not isinstance(configs, dict):
+        configs = {}
+        state["twitter_update_dm_channels"] = configs
+
+    channel_id_text = str(channel_id)
+    user_id_text = str(user_id)
+
+    if not channel_id_text.isdigit() or not user_id_text.isdigit():
+        return
+
+    fixed_handles: list[str] = []
+
+    for handle in handles:
+        handle_text = normalize_handle_text(handle)
+
+        if handle_text and handle_text not in fixed_handles:
+            fixed_handles.append(handle_text)
+
+    configs[channel_id_text] = {
+        "enabled": enabled,
+        "user_id": user_id_text,
         "handles": fixed_handles,
     }
     save_state()

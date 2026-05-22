@@ -339,21 +339,33 @@ async def poll_forever(
             posts_by_handle = await fetch_new_posts_for_handles(token, all_handles)
 
             for target in targets:
-                channel = client.get_channel(int(target["channel_id"]))
-
-                if channel is None:
+                if target.get("kind") == "dm":
                     try:
-                        channel = await client.fetch_channel(int(target["channel_id"]))
+                        user = await client.fetch_user(int(target["user_id"]))
+                        messageable = user
                     except discord.DiscordException:
                         continue
+                else:
+                    channel = client.get_channel(int(target["channel_id"]))
 
-                if not isinstance(channel, discord.TextChannel):
-                    continue
+                    if channel is None:
+                        try:
+                            channel = await client.fetch_channel(int(target["channel_id"]))
+                        except discord.DiscordException:
+                            continue
+
+                    if not isinstance(channel, discord.TextChannel):
+                        continue
+
+                    messageable = channel
 
                 for handle in target["handles"]:
                     for post in posts_by_handle.get(handle, []):
                         try:
-                            await send_post_to_channel(channel, post)
+                            await messageable.send(
+                                embed=build_post_embed(post),
+                                allowed_mentions=discord.AllowedMentions.none(),
+                            )
                         except discord.DiscordException:
                             continue
         except Exception as exc:

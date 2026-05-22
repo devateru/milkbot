@@ -19,8 +19,11 @@ from random_song_command import (
 from storage import (
     get_twitter_update_channel_config,
     get_twitter_update_channel_configs,
+    get_twitter_update_dm_channel_config,
+    get_twitter_update_dm_channel_configs,
     normalize_handle_text,
     set_twitter_update_channel_config,
+    set_twitter_update_dm_channel_config,
 )
 from thumbnail_board import build_gameplaza_thumbnail_board
 from treat import handle_notreat, register_treat_command
@@ -223,6 +226,26 @@ def _handles_from_channel_config(
     return fixed_handles
 
 
+def _handles_from_dm_config(config: dict[str, object] | None) -> list[str]:
+    if config is None:
+        return []
+
+    handles = config.get("handles", [])
+
+    if not isinstance(handles, list):
+        return list(DEFAULT_HANDLES)
+
+    fixed_handles: list[str] = []
+
+    for handle in handles:
+        handle_text = normalize_handle_text(handle)
+
+        if handle_text and handle_text not in fixed_handles:
+            fixed_handles.append(handle_text)
+
+    return fixed_handles
+
+
 def is_twitter_update_channel_enabled(
     guild_id: int,
     channel_id: int,
@@ -230,6 +253,13 @@ def is_twitter_update_channel_enabled(
 ) -> bool:
     if config is None:
         return guild_id == SPECIAL_GUILD_ID and channel_id == SPECIAL_DEFAULT_CHANNEL_ID
+
+    return bool(config.get("enabled", False))
+
+
+def is_twitter_update_dm_enabled(config: dict[str, object] | None) -> bool:
+    if config is None:
+        return False
 
     return bool(config.get("enabled", False))
 
@@ -260,11 +290,31 @@ def get_twitter_update_targets() -> list[dict[str, object]]:
 
             targets.append(
                 {
+                    "kind": "guild",
                     "guild_id": guild.id,
                     "channel_id": channel_id,
                     "handles": handles,
                 }
             )
+
+    for channel_id_text, config in get_twitter_update_dm_channel_configs().items():
+        if not channel_id_text.isdigit() or not is_twitter_update_dm_enabled(config):
+            continue
+
+        user_id = str(config.get("user_id", "")).strip()
+        handles = _handles_from_dm_config(config)
+
+        if not user_id.isdigit() or not handles:
+            continue
+
+        targets.append(
+            {
+                "kind": "dm",
+                "channel_id": int(channel_id_text),
+                "user_id": int(user_id),
+                "handles": handles,
+            }
+        )
 
     return targets
 
@@ -357,13 +407,17 @@ def format_twitter_update_status(channel: discord.TextChannel) -> str:
     )
 
 
-def format_twitter_update_dm_status(channel: discord.abc.PrivateChannel) -> str:
+def format_twitter_update_dm_status(channel: discord.abc.Messageable) -> str:
+    config = get_twitter_update_dm_channel_config(channel.id)
+    enabled = is_twitter_update_dm_enabled(config)
+    handles = _handles_from_dm_config(config)
+
     return (
         f"DM 채널: `{channel.id}`\n"
-        "상태: 비활성화\n"
+        f"상태: {'활성화' if enabled else '비활성화'}\n"
         f"X 토큰: {'설정됨' if X_TOKEN else '없음'}\n"
         f"확인 주기: {TWITTER_UPDATE_POLL_SECONDS}초\n\n"
-        "추적 중인 계정이 없습니다."
+        f"{format_handle_list(handles)}"
     )
 
 
@@ -377,7 +431,7 @@ async def twitter_update_status(interaction: discord.Interaction):
         )
         return
 
-    if isinstance(interaction.channel, discord.abc.PrivateChannel):
+    if interaction.guild is None and interaction.channel is not None:
         await interaction.response.send_message(
             format_twitter_update_dm_status(interaction.channel),
             ephemeral=True,
@@ -392,19 +446,33 @@ async def twitter_update_status(interaction: discord.Interaction):
 
 @tree.command(name="트위터업뎃-활성화", description="이 서버의 X 게시물 알림을 활성화합니다.")
 @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-@app_commands.rename(channel_id="채널id")
-@app_commands.describe(channel_id="DM에서 활성화할 서버 채널 ID입니다. 서버에서는 비워두면 현재 채널을 사용합니다.")
-async def twitter_update_enable(
-    interaction: discord.Interaction,
-    channel_id: str | None = None,
-):
-    channel = await resolve_twitter_update_channel(interaction, channel_id)
+async def twitter_update_enable(interaction: discord.Interaction):
+    if interaction.guild is None and interaction.channel is not None:
+        config = get_twitter_update_dm_channel_config(interaction.channel.id)
+        handles = _handles_from_dm_config(config)
+
+        if not handles and config is None:
+            handles = list(DEFAULT_HANDLES)
+
+        set_twitter_update_dm_channel_config(
+            interaction.channel.id,
+            interaction.user.id,
+            enabled=True,
+            handles=handles,
+        )
+
+        if X_TOKEN:
+            note = "새 게시물 확인은 폴링 주기에 따라 진행됩니다."
+        else:
+            note = "다만 아직 `X_TOKEN`이 설정되지 않아 실제 확인은 시작되지 않았습니다."
+
+        await interaction.response.send_message(f"이 DM에 트위터 업뎃을 활성화했습니다. {note}", ephemeral=True)
+        return
+
+    channel = interaction.channel if isinstance(interaction.channel, discord.TextChannel) else None
 
     if channel is None:
-        await interaction.response.send_message(
-            "알림을 보낼 텍스트 채널을 찾지 못했습니다. DM에서는 `채널id`를 함께 입력해주세요.",
-            ephemeral=True,
-        )
+        await interaction.response.send_message("알림을 보낼 텍스트 채널을 찾지 못했습니다.", ephemeral=True)
         return
 
     guild = channel.guild

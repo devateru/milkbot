@@ -767,6 +767,26 @@ def _location_song_entries(data: dict[str, Any], pick: SongPick) -> list[Locatio
     return entries
 
 
+def _maimai_version_entries(
+    song_entries: list[LocationEntry],
+    version: str,
+) -> list[LocationEntry]:
+    song_version_entries = [
+        entry
+        for entry in song_entries
+        if _field_value(entry[1].get("version")) == version
+    ]
+    chart_version_entries = [
+        entry
+        for entry in song_entries
+        if _version(entry[1], entry[2]) == version
+    ]
+    if len(chart_version_entries) > len(song_version_entries):
+        return chart_version_entries
+
+    return song_version_entries
+
+
 def _maimai_location_folder_candidates(data: dict[str, Any], pick: SongPick) -> list[LocationFolder]:
     song_entries = _location_song_entries(data, pick)
     chart_entries = _location_chart_entries(data, pick)
@@ -787,7 +807,7 @@ def _maimai_location_folder_candidates(data: dict[str, Any], pick: SongPick) -> 
         ),
         (
             get_message("random_song.location_folder_version", value=pick_version),
-            [entry for entry in song_entries if _field_value(entry[1].get("version")) == pick_version],
+            _maimai_version_entries(song_entries, pick_version),
             True,
             True,
         ),
@@ -847,28 +867,31 @@ def _location_folder_candidates(data: dict[str, Any], pick: SongPick) -> list[Lo
 
 def _maimai_location_sort_candidates() -> list[LocationSort]:
     return [
-        (get_message("random_song.location_sort_recommended"), lambda entry: (entry[0],), False, "recommended"),
-        (get_message("random_song.location_sort_title"), lambda entry: (_sort_text(entry[1].get("title")), entry[0]), False, "title"),
+        (
+            get_message("random_song.location_sort_title"),
+            lambda entry: (
+                0 if not _field_value(entry[1].get("title"))[:1].isascii() else 1,
+                _sort_text(entry[1].get("title")),
+                entry[0],
+            ),
+            False,
+            "title",
+        ),
         (
             get_message("random_song.location_sort_level"),
             lambda entry: (
                 _sort_number(entry[2].get("levelValue")),
                 _sort_number(_chart_level(entry[2])),
-                _sort_text(entry[1].get("title")),
+                0 if not _field_value(entry[1].get("title"))[:1].isascii() else 1,
+                _field_value(entry[1].get("title")),
                 entry[0],
             ),
             False,
             "level",
         ),
         (
-            get_message("random_song.location_sort_release"),
-            lambda entry: (_field_value(entry[1].get("releaseDate")), _sort_text(entry[1].get("title")), entry[0]),
-            False,
-            "release",
-        ),
-        (
             get_message("random_song.location_sort_bpm"),
-            lambda entry: (_sort_number(entry[1].get("bpm")), _sort_text(entry[1].get("title")), entry[0]),
+            lambda entry: (_sort_number(entry[1].get("bpm")), entry[0]),
             False,
             "bpm",
         ),

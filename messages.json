@@ -10,6 +10,7 @@
     "gameplaza_error": "유튜브 라이브 상태를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.\n{url}",
     "maimai_song_description": "maimai DX 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
     "chunithm_song_description": "CHUNITHM 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
+    "utage_description": "조건에 맞는 우타게 채보를 찾습니다. [채보 힌트] 버튼이 있으면 확인을 권장해요.",
     "maimai_song_preset_description": "마이선곡 기본 옵션 프리셋을 저장하거나 초기화합니다.",
     "chunithm_song_preset_description": "츄니선곡 기본 옵션 프리셋을 저장하거나 초기화합니다.",
     "treat_description": "서버 treat 자동 응답을 관리합니다.",
@@ -73,6 +74,29 @@
     "option_maimai_chart_type": "STANDARD, DELUXE, UTAGE 중 선택.",
     "option_chunithm_chart_type": "STANDARD, WORLD'S END 중 선택."
   },
+  "utage": {
+    "option_recommended_players": "권장 인원 수입니다.",
+    "option_cabinet_count": "필요한 캐비넷 수입니다.",
+    "list_header": "우타게 채보 목록: 권장 {recommended_players}명 / 캐비넷 {cabinet_count}대",
+    "list_count": "조건에 맞는 채보 {count}개입니다. 버튼으로 채보를 선택해주세요.",
+    "list_page": "페이지 {page}/{total_pages}",
+    "field_artist": "작곡가",
+    "field_difficulty": "난이도",
+    "field_cabinet_count": "캐비넷 수",
+    "field_recommended_players": "권장 인원 수",
+    "field_version": "수록 버전",
+    "field_comment": "코멘트",
+    "field_translation": "번역",
+    "hint_button": "채보 힌트",
+    "guide_button": "채보 공략",
+    "back_button": "우타게 목록으로 돌아가기",
+    "previous_button": "이전",
+    "next_button": "다음",
+    "error_owner_only": "이 버튼은 명령어를 사용한 사람만 사용할 수 있어요.",
+    "error_no_matches": "권장 {recommended_players}명 / 캐비넷 {cabinet_count}대 조건에 맞는 우타게 채보가 없어요.",
+    "error_data_missing": "우타게 채보 JSON 파일을 찾지 못했어요.",
+    "error_data_invalid": "우타게 채보 JSON 파일 형식이 올바르지 않아요."
+  },
   "treat": {
     "empty_list": "이 서버에 등록된 treat이 없습니다.",
     "list": "이 서버의 treat 목록입니다.\n\n{treats}",
@@ -106,6 +130,7 @@
     "slash_gameplaza": "`/겜플라이브` - 게임플라자 라이브 상태를 확인합니다.",
     "slash_maimai_song": "`/마이선곡` - maimai DX 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
     "slash_chunithm_song": "`/츄니선곡` - CHUNITHM 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
+    "slash_utage": "`/우타게` - 권장 인원 수와 캐비넷 수에 맞는 우타게 채보를 찾습니다.",
     "slash_maimai_song_preset": "`/마이선곡-프리셋` - 마이선곡 기본 옵션 프리셋을 저장하거나 초기화합니다.",
     "slash_chunithm_song_preset": "`/츄니선곡-프리셋` - 츄니선곡 기본 옵션 프리셋을 저장하거나 초기화합니다.",
     "slash_treat_add": "`/treat add` - 이 서버에 treat을 추가합니다.",
@@ -139,7 +164,7 @@
       "fields": [
         {
           "name": "슬래시 명령어",
-          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_maimai_song}\n{slash_chunithm_song}\n{slash_maimai_song_preset}\n{slash_chunithm_song_preset}",
+          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_maimai_song}\n{slash_chunithm_song}\n{slash_utage}\n{slash_maimai_song_preset}\n{slash_chunithm_song_preset}",
           "inline": false
         }
       ]

@@ -21,6 +21,7 @@ from storage import (
 )
 from thumbnail_board import build_gameplaza_thumbnail_board
 from treat import handle_notreat, register_treat_command
+from utage_command import register_utage_command
 from youtube_live import (
     MachineStatus,
     YouTubeLiveError,
@@ -56,6 +57,7 @@ _synced = False
 _update_dm_sent = False
 
 register_random_song_command(tree)
+register_utage_command(tree)
 
 
 @client.event

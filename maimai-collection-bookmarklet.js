@@ -656,6 +656,114 @@
       img.parentElement;
   }
 
+  function isCharacterCategory(category) {
+    return category === "character" || category === "eventCharacter";
+  }
+
+  function isCollectionSettingBlock(block, img) {
+    if (block && /collection_setting_block/i.test(block.className || "")) return true;
+    return !!(img && img.closest && img.closest(".collection_setting_block"));
+  }
+
+  function hasRandomSelectionText(block) {
+    return /random selection from (all|favorite)/i.test(cleanText(block ? block.textContent : ""));
+  }
+
+  function isUsableCollectionImageBlock(block, img, category) {
+    if (!block) return false;
+    if (hasRandomSelectionText(block)) return false;
+    if (img && /gray_img/i.test(img.className || "")) return false;
+
+    if (isCharacterCategory(category)) {
+      if (isCollectionSettingBlock(block, img)) return false;
+      var rowBlock = img && img.closest ? img.closest(".see_through_block") : null;
+      if (!rowBlock || rowBlock !== block) return false;
+      if (/collection_setting_block/i.test(rowBlock.className || "")) return false;
+      if (!rowBlock.querySelector(".w_300")) return false;
+    }
+
+    return true;
+  }
+
+  function textFromNode(node) {
+    if (!node) return "";
+    var clone = node.cloneNode(true);
+    Array.prototype.forEach.call(clone.querySelectorAll("script, style, form, button, input, noscript, img"), function (child) {
+      child.remove();
+    });
+    Array.prototype.forEach.call(clone.querySelectorAll("br"), function (br) {
+      br.replaceWith("\n");
+    });
+    return cleanText(clone.textContent || "");
+  }
+
+  function firstStructuredText(block, selectors, rejectClassPattern) {
+    if (!block) return "";
+    for (var i = 0; i < selectors.length; i += 1) {
+      var nodes = Array.prototype.slice.call(block.querySelectorAll(selectors[i]));
+      for (var j = 0; j < nodes.length; j += 1) {
+        var cls = nodes[j].className || "";
+        if (rejectClassPattern && rejectClassPattern.test(cls)) continue;
+        var text = textFromNode(nodes[j]);
+        if (text && text.length <= 260) return text;
+      }
+    }
+    return "";
+  }
+
+  function characterPartsFromText(block) {
+    var text = cleanText(block ? block.textContent : "").replace(/\s+/g, " ");
+    text = text.replace(/^\d+\s+Lv\d+\s+/i, "").replace(/^Lv\d+\s+/i, "");
+    var match = text.match(/^(.+?)\s+(とくいなちほー[:：]\s*.+)$/);
+    if (match) {
+      return {
+        name: cleanText(match[1]),
+        description: cleanText(match[2])
+      };
+    }
+    return {
+      name: cleanText(text),
+      description: ""
+    };
+  }
+
+  function structuredNameFromCollectionBlock(block, category) {
+    if (isCharacterCategory(category)) {
+      return firstStructuredText(block, [
+        ".w_300 [class*='f_15'][class*='break']",
+        ".w_300 [class*='f_14'][class*='break']",
+        ".w_300 > div[class*='break']"
+      ], /gray|collection_chara_lv|collection_chara_awakening|block_info/i) || characterPartsFromText(block).name;
+    }
+
+    return firstStructuredText(block, [
+      ".w_300 [class*='f_15'][class*='break']",
+      ".w_300 [class*='f_14'][class*='break']",
+      "div[class*='p_5'][class*='f_14'][class*='break']",
+      "div[class*='f_15'][class*='break']",
+      "div[class*='f_14'][class*='break']"
+    ], /gray|collection_chara_lv|collection_chara_awakening|block_info/i);
+  }
+
+  function structuredDescriptionFromCollectionBlock(block, name, category) {
+    var description = "";
+    if (isCharacterCategory(category)) {
+      description = firstStructuredText(block, [
+        ".w_300 [class*='gray'][class*='break']",
+        "[class*='gray'][class*='break']"
+      ], /block_info/i) || characterPartsFromText(block).description;
+    } else {
+      description = firstStructuredText(block, [
+        "[class*='p_l_5'][class*='f_12'][class*='gray'][class*='break']",
+        "[class*='f_12'][class*='gray'][class*='break']",
+        "[class*='gray'][class*='break']"
+      ], /block_info/i);
+    }
+
+    if (!description || description === name) return "";
+    return description.slice(0, 320);
+  }
+
   function textLinesFromBlock(block) {
     if (!block) return [];
     var clone = block.cloneNode(true);
@@ -677,6 +785,9 @@
   }
 
   function nameFromGenericCollectionBlock(block, img, imageUrl, category) {
+    var structuredName = structuredNameFromCollectionBlock(block, category);
+    if (structuredName && structuredName.length <= 120) return structuredName;
+
     var alt = cleanText(img ? img.getAttribute("alt") : "");
     if (alt) return alt;
 
@@ -693,7 +804,10 @@
     return (CATEGORY_LABELS[category] || "ITEM") + " " + imageBasename(imageUrl);
   }
 
-  function descriptionFromGenericCollectionBlock(block, name) {
+  function descriptionFromGenericCollectionBlock(block, name, category) {
+    var structuredDescription = structuredDescriptionFromCollectionBlock(block, name, category);
+    if (structuredDescription) return structuredDescription;
+
     var lines = textLinesFromBlock(block).filter(function (line) {
       return line !== name;
     });
@@ -739,12 +853,13 @@
     var seen = new Set();
     var results = [];
     findCollectionImages(doc, pageUrl, category).forEach(function (entry) {
+      var block = collectionBlockFromImage(entry.img);
+      if (!isUsableCollectionImageBlock(block, entry.img, category)) return;
       if (seen.has(entry.url)) return;
       seen.add(entry.url);
 
-      var block = collectionBlockFromImage(entry.img);
       var name = nameFromGenericCollectionBlock(block, entry.img, entry.url, category);
-      var description = descriptionFromGenericCollectionBlock(block, name);
+      var description = descriptionFromGenericCollectionBlock(block, name, category);
       if (isRandomSelectionItem(name, description)) return;
 
       results.push({
@@ -763,6 +878,7 @@
 
   function parseByCollectionTrophyBlocks(doc, pageUrl) {
     var blocks = Array.prototype.slice.call(doc.querySelectorAll(".see_through_block")).filter(function (block) {
+      if (hasRandomSelectionText(block)) return false;
       return block.querySelector(".collection_trophy_block .trophy_inner_block, .collection_trophy_block");
     });
     var pageGradeHint = gradeHintFromPage(doc, pageUrl);

@@ -700,6 +700,11 @@
     return lines.slice(0, 3).join("\n").slice(0, 320);
   }
 
+  function isRandomSelectionItem(name, description) {
+    var text = cleanText([name, description].join("\n")).toLowerCase();
+    return /random selection from (all|favorite)/i.test(text);
+  }
+
   function findCollectionImages(doc, pageUrl, category) {
     var pattern = CATEGORY_IMAGE_PATTERNS[category];
     var images = Array.prototype.slice.call(doc.querySelectorAll("img[src]")).map(function (img) {
@@ -740,6 +745,7 @@
       var block = collectionBlockFromImage(entry.img);
       var name = nameFromGenericCollectionBlock(block, entry.img, entry.url, category);
       var description = descriptionFromGenericCollectionBlock(block, name);
+      if (isRandomSelectionItem(name, description)) return;
 
       results.push({
         category: category,

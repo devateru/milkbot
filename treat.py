@@ -1,4 +1,5 @@
 from collections import Counter
+import random
 
 import discord
 from discord import app_commands
@@ -10,6 +11,9 @@ from storage import (
     get_guild_treat_rules,
     remove_guild_treat,
 )
+
+
+TREAT_TRIGGER_RATE = 0.05
 
 
 def is_treat_enabled_guild(guild_id: int) -> bool:
@@ -169,6 +173,9 @@ async def handle_notreat(message: discord.Message) -> None:
         flexible = bool(rule.get("flexible", False))
 
         if treat and _message_matches_treat(text, treat, flexible):
+            if random.random() >= TREAT_TRIGGER_RATE:
+                return
+
             await message.reply(
                 get_message("treat.notreat_reply", treat=treat),
                 mention_author=False,

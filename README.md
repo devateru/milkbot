@@ -6,6 +6,114 @@ random personal discord bot
 - `DISCORD_TOKEN`: Discord bot token
 - `BOT_DEVELOPER_ID`: bot developer Discord user ID
 
+## 밀크짱 로컬 LLM 구조
+
+Ubuntu 서버에서는 Discord 봇만 실행합니다. 내 PC에서는 Ollama와 `tools/milk_local_agent` 로컬 에이전트를 실행하고, context 파일도 모두 PC의 로컬 파일시스템에 저장합니다. 서버 봇은 Discord 메시지를 읽은 뒤 reverse tunnel로 연결된 `http://127.0.0.1:18080` 로컬 에이전트에 요청합니다. PC나 tunnel, Ollama, 로컬 에이전트 중 하나라도 꺼져 있으면 Discord에는 정확히 `zzz (ollama 비활성화)`만 전송합니다.
+
+네트워크는 다음처럼 둡니다.
+
+- PC 로컬 에이전트: `127.0.0.1:18080`
+- PC Ollama: `127.0.0.1:11434`
+- Ubuntu 서버에서 접근하는 agent URL: `http://127.0.0.1:18080`
+- PC의 `18080`, `11434`와 서버의 `18080`은 인터넷에 공개하지 않습니다.
+
+## 밀크짱 호출
+
+Discord 일반 메시지가 `밀크짱`으로 시작할 때만 반응합니다. 메시지 중간에 `밀크짱`이 있으면 무시합니다. 봇 자신의 메시지와 다른 봇 메시지는 무시합니다. `밀크짱` 뒤의 텍스트를 사용자 요청으로 사용하며, `밀크짱`만 보내면 짧게 무엇을 도와줄지 묻습니다.
+
+최초 호출은 PC context가 없으므로 과거 Discord 메시지를 0개만 사용합니다. 이후 호출은 `recent_context.json`의 `last_processed_message_id` 이후 메시지를 최대 `MILK_MAX_MESSAGES_AFTER_LAST_CONTEXT`개, 기본 100개까지 시간순으로 전달합니다.
+
+## 서버 봇 환경변수
+
+서버 봇용 예시는 `.env.example`에 있습니다.
+
+- `MILK_TRIGGER_PREFIX`: 기본값 `밀크짱`
+- `MILK_AGENT_BASE_URL`: 기본값 `http://127.0.0.1:18080`
+- `MILK_AGENT_TIMEOUT_SEC`: 기본값 `150`
+- `MILK_AGENT_TOKEN`: 설정하면 agent 요청에 `Authorization: Bearer <token>`을 붙입니다.
+- `MILK_MAX_MESSAGES_AFTER_LAST_CONTEXT`: 기본값 `100`
+- `ALLOWED_CHANNEL_IDS`: 쉼표로 구분한 허용 Discord 채널 ID
+- `ALLOWED_ROLE_IDS`: 쉼표로 구분한 허용 Discord 역할 ID
+
+## PC 로컬 에이전트 실행
+
+PC 에이전트 문서와 env 예시는 `tools/milk_local_agent/README.md`, `tools/milk_local_agent/.env.example`에 있습니다. `OLLAMA_MODEL`은 필수입니다.
+
+```bash
+ollama list
+curl http://127.0.0.1:11434/api/tags
+tools/milk_local_agent/scripts/start_agent.sh
+curl http://127.0.0.1:18080/health
+```
+
+Windows PowerShell:
+
+```powershell
+.\tools\milk_local_agent\scripts\check_ollama.ps1
+.\tools\milk_local_agent\scripts\start_agent.ps1
+Invoke-RestMethod -Uri "http://127.0.0.1:18080/health"
+```
+
+## reverse tunnel
+
+PC에서 Ubuntu 서버로 reverse tunnel을 엽니다.
+
+```bash
+ssh -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -R 127.0.0.1:18080:127.0.0.1:18080 USER@SERVER_HOST
+```
+
+서버에서 tunnel을 확인합니다.
+
+```bash
+curl http://127.0.0.1:18080/health
+```
+
+서버 봇의 `MILK_AGENT_BASE_URL`은 `http://127.0.0.1:18080`으로 설정합니다.
+
+## context 파일
+
+기본 위치는 PC의 `data/milk_context`입니다. 이 경로는 git에 커밋하지 않습니다.
+
+- `character.txt`: 캐릭터 특징, 말투, 금지/권장 표현. 자동 업데이트하지 않습니다.
+- `channel_context.txt`: 채널 장기 context 요약. 성공 호출 뒤 업데이트하며 원문 전체 로그를 무한 저장하지 않습니다.
+- `recent_context.txt`: 가장 최근 대화 context와 마지막 처리 메시지 정보.
+- `recent_context.json`: `last_processed_message_id`, `last_processed_at`, `last_channel_id`, `last_summary`.
+- `knowledge.txt`: 직접 적는 고정 지식. 자동 업데이트하지 않습니다.
+- `context_log.txt`: context 업데이트 시각과 처리 메시지 범위를 짧게 append합니다.
+
+## 웹 검색
+
+웹 검색은 PC 로컬 에이전트에서만 수행합니다. 서버 봇에는 검색 API key를 두지 않습니다. 기본값은 비활성화입니다. 검색을 쓰려면 `WEB_SEARCH_ENABLED=true`와 provider별 key가 필요합니다.
+
+- Google Custom Search: `GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_ENGINE_ID`
+- SerpAPI: `SERPAPI_API_KEY`
+- Tavily: `TAVILY_API_KEY`
+
+## 보안 주의
+
+- Ollama `11434`를 `0.0.0.0`으로 공개하지 마세요.
+- PC 로컬 에이전트 `18080`을 인터넷에 공개하지 마세요.
+- reverse tunnel은 서버의 `127.0.0.1`에만 바인딩하세요.
+- `MILK_AGENT_TOKEN`을 설정하세요.
+- token/API key를 커밋하지 마세요.
+
+## 수동 테스트 절차
+
+1. PC에서 Ollama 실행
+2. PC에서 `ollama list`로 모델 설치 확인
+3. PC에서 `curl http://127.0.0.1:11434/api/tags`로 Ollama API 확인
+4. PC에서 로컬 에이전트 실행
+5. PC에서 `curl http://127.0.0.1:18080/health` 확인
+6. PC에서 서버로 reverse tunnel 실행
+7. Ubuntu 서버에서 `curl http://127.0.0.1:18080/health` 확인
+8. 서버 봇 환경변수 `MILK_AGENT_BASE_URL=http://127.0.0.1:18080` 설정
+9. 서버 봇 재시작
+10. Discord 채널에서 `밀크짱 안녕` 입력
+11. 응답 확인
+12. PC 로컬 에이전트나 Ollama를 끈 뒤 `밀크짱 안녕` 입력
+13. 정확히 `zzz (ollama 비활성화)`가 출력되는지 확인
+14. PC의 `data/milk_context` 아래 context 파일 생성/업데이트 확인
+
 ideas/TODOs
 
 - v fix the gameplaza live checker thingy

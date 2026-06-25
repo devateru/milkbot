@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from dev_commands import handle_developer_dm_command
 from help_commands import build_server_help_embeds
+from milk_agent_client import MilkAgentConfig, MilkAgentMessageHandler
 from messages import get_message
 from random_song_command import (
     build_chunithm_probability_table_embed,
@@ -52,6 +53,7 @@ intents.dm_messages = True
 
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
+milk_agent_handler = MilkAgentMessageHandler(MilkAgentConfig.from_env())
 
 _synced = False
 _update_dm_sent = False
@@ -222,6 +224,9 @@ async def on_message(message: discord.Message):
         return
 
     content = message.content.strip()
+    if await milk_agent_handler.handle_message(message):
+        return
+
     if content == "마이마이 확률표":
         try:
             embed = await build_maimai_probability_table_embed(message.author.id)

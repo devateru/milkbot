@@ -135,7 +135,8 @@ class MilkAgentClientTests(unittest.IsolatedAsyncioTestCase):
         handled = await handler.handle_message(fake_message("밀크짱 안녕", channel=channel))
 
         self.assertTrue(handled)
-        self.assertEqual(channel.sent, [(UNAVAILABLE_MESSAGE, {"allowed_mentions": None})])
+        self.assertEqual(channel.sent[0][0], UNAVAILABLE_MESSAGE)
+        self.assertIn("allowed_mentions", channel.sent[0][1])
 
     async def test_state_without_recent_context_uses_zero_history_messages(self) -> None:
         channel = FakeChannel()

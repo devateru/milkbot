@@ -73,6 +73,8 @@ def fake_message(
     content: str,
     *,
     message_id: int = 999,
+    author_id: int = 456,
+    self_bot_id: int = 999999,
     bot: bool = False,
     channel: FakeChannel | None = None,
 ) -> SimpleNamespace:
@@ -82,14 +84,18 @@ def fake_message(
         content=content,
         created_at=datetime(2026, 6, 26, tzinfo=timezone.utc),
         author=SimpleNamespace(
-            id=456,
+            id=author_id,
             display_name="tester",
             name="tester",
             bot=bot,
             roles=[],
         ),
         channel=channel,
-        guild=SimpleNamespace(id=789, name="guild"),
+        guild=SimpleNamespace(
+            id=789,
+            name="guild",
+            me=SimpleNamespace(id=self_bot_id),
+        ),
         attachments=[],
     )
 
@@ -162,9 +168,16 @@ class MilkAgentClientTests(unittest.IsolatedAsyncioTestCase):
         handler = MilkAgentMessageHandler(MilkAgentConfig(), http_client=client)
         historical = fake_message("이전 대화", message_id=11)
 
-        async def fake_collect(_message, last_processed_message_id: str, limit: int):
+        async def fake_collect(
+            _message,
+            last_processed_message_id: str,
+            limit: int,
+            *,
+            include_bot_messages: bool = True,
+        ):
             self.assertEqual(last_processed_message_id, "10")
             self.assertEqual(limit, 100)
+            self.assertTrue(include_bot_messages)
             return [historical]
 
         with patch("milk_agent_client.collect_messages_since_last_context", fake_collect):
@@ -183,6 +196,41 @@ class MilkAgentClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(selected), 100)
         self.assertEqual(selected[0].content, "m50")
         self.assertEqual(selected[-1].content, "m149")
+
+    def test_history_includes_other_bot_messages_by_default(self) -> None:
+        messages = [
+            fake_message("human", message_id=1, author_id=1),
+            fake_message("other bot", message_id=2, author_id=2, bot=True),
+        ]
+        selected = select_history_messages(messages, limit=100)
+
+        self.assertEqual([message.content for message in selected], ["human", "other bot"])
+
+    def test_history_can_exclude_bot_messages(self) -> None:
+        messages = [
+            fake_message("human", message_id=1, author_id=1),
+            fake_message("other bot", message_id=2, author_id=2, bot=True),
+        ]
+        selected = select_history_messages(
+            messages,
+            include_bot_messages=False,
+            limit=100,
+        )
+
+        self.assertEqual([message.content for message in selected], ["human"])
+
+    def test_history_excludes_self_bot_messages(self) -> None:
+        messages = [
+            fake_message("other bot", message_id=1, author_id=2, bot=True),
+            fake_message("milkbot self", message_id=2, author_id=999999, bot=True),
+        ]
+        selected = select_history_messages(
+            messages,
+            excluded_author_ids={"999999"},
+            limit=100,
+        )
+
+        self.assertEqual([message.content for message in selected], ["other bot"])
 
     def test_chunking_uses_1900_characters(self) -> None:
         chunks = split_discord_message("a" * 4000)

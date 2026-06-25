@@ -32,6 +32,7 @@ Discord 일반 메시지가 `밀크짱`으로 시작할 때만 반응합니다. 
 - `MILK_AGENT_TIMEOUT_SEC`: 기본값 `150`
 - `MILK_AGENT_TOKEN`: 설정하면 agent 요청에 `Authorization: Bearer <token>`을 붙입니다.
 - `MILK_MAX_MESSAGES_AFTER_LAST_CONTEXT`: 기본값 `100`
+- `MILK_INCLUDE_BOT_MESSAGES_IN_CONTEXT`: 기본값 `true`. `밀크짱` 트리거는 봇 메시지를 무시하지만, 직전 context 이후 메시지 수집에는 다른 채팅봇 메시지를 포함합니다. 가능한 경우 밀크봇 자신의 이전 답변은 제외합니다.
 - `ALLOWED_CHANNEL_IDS`: 쉼표로 구분한 허용 Discord 채널 ID
 - `ALLOWED_ROLE_IDS`: 쉼표로 구분한 허용 Discord 역할 ID
 
@@ -53,6 +54,18 @@ Windows PowerShell:
 .\tools\milk_local_agent\scripts\start_agent.ps1
 Invoke-RestMethod -Uri "http://127.0.0.1:18080/health"
 ```
+
+### PC 에이전트 속도 설정
+
+기본값은 빠른 응답 우선입니다. 최종 답변 생성을 제외한 추가 Ollama `/api/chat` 호출은 기본적으로 꺼져 있습니다.
+
+- `OLLAMA_MAX_PROMPT_CHARS=8000`: prompt 최대 길이입니다. 답변이 느리면 `6000` 정도로 낮춰 테스트합니다.
+- `OLLAMA_HEALTH_CACHE_TTL_SEC=10`: `/health`의 가벼운 `/api/tags` 확인 결과를 짧게 캐시합니다.
+- `MILK_ENABLE_LLM_RELEVANCE_FILTER=false`: 기본값은 휴리스틱 관련 메시지 필터입니다.
+- `MILK_ENABLE_LLM_CONTEXT_SUMMARY=false`: 기본값은 deterministic context 압축입니다.
+- `MILK_MAX_RELATED_MESSAGES=10`: 최종 prompt에 넣는 관련 Discord 메시지 최대 개수입니다.
+
+PC agent 로그에는 `/health`, `/state`, `/chat` 처리 시간, Ollama `/api/chat` 호출 시간, `/chat` 1회당 `ollama_chat_calls`가 출력됩니다.
 
 ## reverse tunnel
 

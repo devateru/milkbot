@@ -53,9 +53,13 @@ class LocalAgentConfig:
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = ""
     ollama_timeout_sec: int = 120
-    ollama_max_prompt_chars: int = 12000
+    ollama_max_prompt_chars: int = 8000
     ollama_max_concurrency: int = 1
+    ollama_health_cache_ttl_sec: int = 10
     context_dir: Path = Path("data/milk_context")
+    enable_llm_relevance_filter: bool = False
+    enable_llm_context_summary: bool = False
+    max_related_messages: int = 10
     web_search_enabled: bool = False
     web_search_provider: str = "disabled"
     google_search_api_key: str = ""
@@ -84,7 +88,7 @@ class LocalAgentConfig:
             ollama_max_prompt_chars=_get_int(
                 env,
                 "OLLAMA_MAX_PROMPT_CHARS",
-                12000,
+                8000,
                 minimum=1000,
             ),
             ollama_max_concurrency=_get_int(
@@ -93,7 +97,29 @@ class LocalAgentConfig:
                 1,
                 minimum=1,
             ),
+            ollama_health_cache_ttl_sec=_get_int(
+                env,
+                "OLLAMA_HEALTH_CACHE_TTL_SEC",
+                10,
+                minimum=0,
+            ),
             context_dir=Path(_get_str(env, "MILK_CONTEXT_DIR", "data/milk_context")),
+            enable_llm_relevance_filter=_get_bool(
+                env,
+                "MILK_ENABLE_LLM_RELEVANCE_FILTER",
+                False,
+            ),
+            enable_llm_context_summary=_get_bool(
+                env,
+                "MILK_ENABLE_LLM_CONTEXT_SUMMARY",
+                False,
+            ),
+            max_related_messages=_get_int(
+                env,
+                "MILK_MAX_RELATED_MESSAGES",
+                10,
+                minimum=0,
+            ),
             web_search_enabled=_get_bool(env, "WEB_SEARCH_ENABLED", False),
             web_search_provider=_get_str(env, "WEB_SEARCH_PROVIDER", "disabled"),
             google_search_api_key=_get_str(env, "GOOGLE_SEARCH_API_KEY"),

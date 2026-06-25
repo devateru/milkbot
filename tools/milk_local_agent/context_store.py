@@ -249,3 +249,20 @@ def build_channel_context_entry(
 
     lines.append(f"- 답변: {answer[:1000]}")
     return "\n".join(lines)
+
+
+def compact_channel_context_deterministically(
+    channel_context_text: str,
+    *,
+    max_chars: int,
+) -> str:
+    if len(channel_context_text) <= max_chars:
+        return channel_context_text
+
+    marker = (
+        "# channel context\n"
+        "이 파일은 길이가 길어져 deterministic 방식으로 최근 context 위주로 압축되었습니다.\n"
+        "원문 Discord 로그 전체를 보관하지 않습니다.\n\n"
+    )
+    keep_chars = max(1000, max_chars - len(marker))
+    return marker + channel_context_text[-keep_chars:].lstrip()

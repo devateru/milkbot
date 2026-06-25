@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any
 
 from .config import LocalAgentConfig
+
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaUnavailable(Exception):
@@ -14,7 +19,9 @@ class OllamaClient:
         self.config = config
 
     async def health(self) -> dict[str, Any]:
+        started = time.perf_counter()
         if not self.config.ollama_model:
+            logger.info("ollama /api/tags skipped elapsed_ms=0.0 reason=missing_model")
             return {
                 "ok": False,
                 "ollama_ok": False,
@@ -28,6 +35,12 @@ class OllamaClient:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(f"{self.config.ollama_base_url}/api/tags") as response:
                     if response.status != 200:
+                        elapsed_ms = (time.perf_counter() - started) * 1000
+                        logger.info(
+                            "ollama /api/tags completed elapsed_ms=%.1f status=%s",
+                            elapsed_ms,
+                            response.status,
+                        )
                         return {
                             "ok": False,
                             "ollama_ok": False,
@@ -36,6 +49,12 @@ class OllamaClient:
 
                     data = await response.json(content_type=None)
         except Exception as exc:
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            logger.info(
+                "ollama /api/tags failed elapsed_ms=%.1f error=%s",
+                elapsed_ms,
+                exc,
+            )
             return {
                 "ok": False,
                 "ollama_ok": False,
@@ -48,6 +67,12 @@ class OllamaClient:
             if isinstance(model, dict)
         }
         model_available = self.config.ollama_model in model_names
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        logger.info(
+            "ollama /api/tags completed elapsed_ms=%.1f status=200 model_available=%s",
+            elapsed_ms,
+            model_available,
+        )
 
         return {
             "ok": model_available,
@@ -87,6 +112,8 @@ class OllamaClient:
         return await self.chat(system_prompt=system_prompt, user_prompt=user_prompt)
 
     async def _post_chat(self, payload: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
+        status: int | str = "unknown"
         try:
             import aiohttp
 
@@ -96,16 +123,41 @@ class OllamaClient:
                     f"{self.config.ollama_base_url}/api/chat",
                     json=payload,
                 ) as response:
+                    status = response.status
                     if response.status != 200:
                         raise OllamaUnavailable(f"ollama HTTP {response.status}")
 
                     data = await response.json(content_type=None)
         except OllamaUnavailable:
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            logger.info(
+                "ollama /api/chat failed elapsed_ms=%.1f status=%s",
+                elapsed_ms,
+                status,
+            )
             raise
         except Exception as exc:
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            logger.info(
+                "ollama /api/chat failed elapsed_ms=%.1f status=%s error=%s",
+                elapsed_ms,
+                status,
+                exc,
+            )
             raise OllamaUnavailable(str(exc)) from exc
 
+        elapsed_ms = (time.perf_counter() - started) * 1000
         if not isinstance(data, dict):
+            logger.info(
+                "ollama /api/chat failed elapsed_ms=%.1f status=%s error=invalid_response",
+                elapsed_ms,
+                status,
+            )
             raise OllamaUnavailable("invalid ollama response")
 
+        logger.info(
+            "ollama /api/chat completed elapsed_ms=%.1f status=%s",
+            elapsed_ms,
+            status,
+        )
         return data

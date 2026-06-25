@@ -57,6 +57,22 @@ curl http://127.0.0.1:18080/health
 
 `MILK_AGENT_TOKEN`이 설정되어 있으면 모든 요청에 `Authorization: Bearer <token>`이 필요합니다.
 
+## 속도 설정
+
+기본값은 빠른 응답 우선입니다. 답변 1회당 Ollama `/api/chat` 호출은 최종 답변 생성 1회만 수행하고, relevance filtering과 context 압축 요약에는 Ollama를 쓰지 않습니다.
+
+- `OLLAMA_MAX_PROMPT_CHARS=8000`: 최종 user prompt 최대 길이입니다. 더 빠른 응답이 필요하면 `6000` 정도로 낮춰볼 수 있습니다.
+- `OLLAMA_HEALTH_CACHE_TTL_SEC=10`: `/health`의 Ollama `/api/tags` 확인 결과를 짧게 캐시해 `/health` 뒤 `/chat`에서 중복 확인을 줄입니다. `0`이면 캐시를 끕니다.
+- `MILK_ENABLE_LLM_RELEVANCE_FILTER=false`: 기본값에서는 휴리스틱 관련 메시지 필터만 사용합니다.
+- `MILK_ENABLE_LLM_CONTEXT_SUMMARY=false`: 기본값에서는 channel context가 길어져도 deterministic 압축을 사용합니다.
+- `MILK_MAX_RELATED_MESSAGES=10`: `messages_since_last_context`가 많아도 최종 prompt에 들어가는 관련 메시지 최대 개수입니다.
+
+로그에는 `/health`, `/state`, `/chat` 처리 시간, Ollama `/api/chat` 호출 시간, `/chat` 1회당 `ollama_chat_calls`가 남습니다. 로컬에서 속도를 볼 때는 agent 로그를 켜둔 상태로 Discord에서 `밀크짱 안녕`을 호출하거나 다음처럼 직접 측정합니다.
+
+```bash
+time curl -s http://127.0.0.1:18080/health
+```
+
 ## context 파일
 
 기본 위치는 `data/milk_context`입니다.

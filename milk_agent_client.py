@@ -49,6 +49,13 @@ def _parse_int(value: str | None, default: int) -> int:
     return max(0, parsed)
 
 
+def _parse_bool(value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+
+    return value.strip().casefold() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class MilkAgentConfig:
     trigger_prefix: str = DEFAULT_TRIGGER_PREFIX
@@ -56,6 +63,7 @@ class MilkAgentConfig:
     timeout_sec: float = 150
     token: str = ""
     max_messages_after_last_context: int = 100
+    include_bot_messages_in_context: bool = True
     allowed_channel_ids: frozenset[str] = field(default_factory=frozenset)
     allowed_role_ids: frozenset[str] = field(default_factory=frozenset)
 
@@ -72,6 +80,10 @@ class MilkAgentConfig:
             max_messages_after_last_context=_parse_int(
                 os.getenv("MILK_MAX_MESSAGES_AFTER_LAST_CONTEXT"),
                 100,
+            ),
+            include_bot_messages_in_context=_parse_bool(
+                os.getenv("MILK_INCLUDE_BOT_MESSAGES_IN_CONTEXT"),
+                True,
             ),
             allowed_channel_ids=_parse_id_set(os.getenv("ALLOWED_CHANNEL_IDS")),
             allowed_role_ids=_parse_id_set(os.getenv("ALLOWED_ROLE_IDS")),
@@ -124,12 +136,22 @@ def _message_attachments(message: Any) -> list[Any]:
     return list(attachments)
 
 
-def is_history_message_usable(message: Any, *, current_message_id: str | None = None) -> bool:
+def is_history_message_usable(
+    message: Any,
+    *,
+    current_message_id: str | None = None,
+    include_bot_messages: bool = True,
+    excluded_author_ids: set[str] | None = None,
+) -> bool:
     if current_message_id is not None and _message_id(message) == str(current_message_id):
         return False
 
     author = getattr(message, "author", None)
-    if bool(getattr(author, "bot", False)):
+    author_id = str(getattr(author, "id", ""))
+    if excluded_author_ids and author_id in excluded_author_ids:
+        return False
+
+    if bool(getattr(author, "bot", False)) and not include_bot_messages:
         return False
 
     content = _message_content(message).strip()
@@ -141,12 +163,19 @@ def select_history_messages(
     messages: list[Any],
     *,
     current_message_id: str | None = None,
+    include_bot_messages: bool = True,
+    excluded_author_ids: set[str] | None = None,
     limit: int = 100,
 ) -> list[Any]:
     usable = [
         message
         for message in messages
-        if is_history_message_usable(message, current_message_id=current_message_id)
+        if is_history_message_usable(
+            message,
+            current_message_id=current_message_id,
+            include_bot_messages=include_bot_messages,
+            excluded_author_ids=excluded_author_ids,
+        )
     ]
 
     if limit <= 0:
@@ -180,6 +209,7 @@ def build_message_payload(message: Any) -> dict[str, Any]:
         "created_at": created_at_text,
         "author_id": str(getattr(author, "id", "")),
         "author_display_name": _author_display_name(author),
+        "author_is_bot": bool(getattr(author, "bot", False)),
         "content": _message_content(message),
         "attachments": [
             _attachment_payload(attachment)
@@ -356,6 +386,7 @@ class MilkAgentMessageHandler:
                 message,
                 str(last_processed_message_id),
                 self.config.max_messages_after_last_context,
+                include_bot_messages=self.config.include_bot_messages_in_context,
             )
             history_payloads = [
                 build_message_payload(history_message)
@@ -374,6 +405,8 @@ async def collect_messages_since_last_context(
     current_message: Any,
     last_processed_message_id: str,
     limit: int,
+    *,
+    include_bot_messages: bool = True,
 ) -> list[Any]:
     if limit <= 0:
         return []
@@ -397,9 +430,18 @@ async def collect_messages_since_last_context(
     selected = select_history_messages(
         list(reversed(messages)),
         current_message_id=_message_id(current_message),
+        include_bot_messages=include_bot_messages,
+        excluded_author_ids=_self_author_ids(current_message),
         limit=limit,
     )
     return selected
+
+
+def _self_author_ids(message: Any) -> set[str]:
+    guild = getattr(message, "guild", None)
+    guild_me = getattr(guild, "me", None)
+    author_id = str(getattr(guild_me, "id", "") or "")
+    return {author_id} if author_id else set()
 
 
 def build_agent_chat_payload(

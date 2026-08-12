@@ -103,9 +103,7 @@ def register_maishift_commands(
             f"프로필: [{snapshot.profile_name}]({snapshot.profile_url})\n"
             f"레이팅: **{snapshot.total_rating:,}**\n"
             f"플레이 수: **{snapshot.play_count:,}**\n"
-            f"마지막 갱신: **{_format_update(snapshot)}**\n"
-            f"신곡 BEST: **{len(snapshot.new_best)}개**\n"
-            f"구곡 BEST: **{len(snapshot.old_best)}개**"
+            f"마지막 갱신: **{_format_update(snapshot)}**"
         )
         await interaction.followup.send(
             embed=embed,

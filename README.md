@@ -6,6 +6,23 @@ random personal discord bot
 - `DISCORD_TOKEN`: Discord bot token
 - `BOT_DEVELOPER_ID`: bot developer Discord user ID
 
+## 글자 이모지 명령어
+
+`/글자이모지`는 입력한 문자열을 글자별 타일 이미지로 변환합니다. `compress`를 켜면
+내용 전체를 256×256 이모지 한 장에 맞춥니다.
+
+- `background`: 투명, 우유색, 검정, 흰색, 분홍, 파랑, 초록
+- `font`: 고딕, 굵은 고딕, 명조, 고정폭
+- `effect`: 없음, 네온 글로우, 무지개 GIF, 불꽃 GIF
+- 지원 이스케이프: `\n`, `\r`, `\t`, `\\`, `\xNN`, `\uNNNN`, `\UNNNNNNNN`
+- 최대 64글자이며 긴 줄은 12글자마다 자동 줄바꿈됩니다.
+
+한글 렌더링을 위해 Ubuntu 서버에는 Noto CJK 또는 나눔글꼴이 필요합니다.
+
+```bash
+sudo apt-get install fonts-noto-cjk fonts-nanum
+```
+
 ## 밀크짱 로컬 LLM 구조
 
 Ubuntu 서버에서는 Discord 봇만 실행합니다. 내 PC에서는 Ollama와 `tools/milk_local_agent` 로컬 에이전트를 실행하고, context 파일도 모두 PC의 로컬 파일시스템에 저장합니다. 서버 봇은 Discord 메시지를 읽은 뒤 reverse tunnel로 연결된 `http://127.0.0.1:18080` 로컬 에이전트에 요청합니다. PC나 tunnel, Ollama, 로컬 에이전트 중 하나라도 꺼져 있으면 Discord에는 정확히 `zzz (ollama 비활성화)`만 전송합니다.

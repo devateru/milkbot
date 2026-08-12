@@ -12,6 +12,7 @@ def build_server_help_embeds(guild_id: int) -> list[discord.Embed]:
         "slash_maimai_song": get_message("commands.slash_maimai_song"),
         "slash_chunithm_song": get_message("commands.slash_chunithm_song"),
         "slash_utage": get_message("commands.slash_utage"),
+        "slash_emoji_text": get_message("commands.slash_emoji_text"),
         "slash_maimai_song_preset": get_message("commands.slash_maimai_song_preset"),
         "slash_chunithm_song_preset": get_message("commands.slash_chunithm_song_preset"),
     }

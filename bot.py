@@ -9,6 +9,7 @@ from discord import app_commands
 from dotenv import load_dotenv
 
 from dev_commands import handle_developer_dm_command
+from emoji_text import register_emoji_text_command
 from help_commands import build_server_help_embeds
 from milk_agent_client import MilkAgentConfig, MilkAgentMessageHandler
 from messages import get_message
@@ -60,6 +61,7 @@ _update_dm_sent = False
 
 register_random_song_command(tree)
 register_utage_command(tree)
+register_emoji_text_command(tree)
 
 
 @client.event

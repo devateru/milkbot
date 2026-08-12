@@ -131,6 +131,7 @@
     "slash_maimai_song": "`/마이선곡` - maimai DX 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
     "slash_chunithm_song": "`/츄니선곡` - CHUNITHM 국제판 수록곡 중 조건에 맞는 곡을 랜덤으로 골라줍니다.",
     "slash_utage": "`/우타게` - 권장 인원 수와 캐비넷 수에 맞는 우타게 채보를 찾습니다.",
+    "slash_emoji_text": "`/글자이모지` - 문자열을 글자별 이모지 이미지 또는 한 개의 이모지로 만듭니다.",
     "slash_maimai_song_preset": "`/마이선곡-프리셋` - 마이선곡 기본 옵션 프리셋을 저장하거나 초기화합니다.",
     "slash_chunithm_song_preset": "`/츄니선곡-프리셋` - 츄니선곡 기본 옵션 프리셋을 저장하거나 초기화합니다.",
     "slash_treat_add": "`/treat add` - 이 서버에 treat을 추가합니다.",
@@ -164,7 +165,7 @@
       "fields": [
         {
           "name": "슬래시 명령어",
-          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_maimai_song}\n{slash_chunithm_song}\n{slash_utage}\n{slash_maimai_song_preset}\n{slash_chunithm_song_preset}",
+          "value": "{slash_help}\n{slash_ping}\n{slash_gameplaza}\n{slash_maimai_song}\n{slash_chunithm_song}\n{slash_utage}\n{slash_emoji_text}\n{slash_maimai_song_preset}\n{slash_chunithm_song_preset}",
           "inline": false
         }
       ]

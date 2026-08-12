@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import colorsys
+import hashlib
 import io
+import json
 import math
+import os
 import random
 import re
+import time
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,8 +26,11 @@ MAX_CANVAS = 1600
 TILE_SIZE = 112
 TILE_GAP = 8
 CANVAS_PADDING = 16
-COMPRESSED_SIZE = 256
-MAX_OUTPUT_BYTES = 9_000_000
+COMPRESSED_SIZE = 128
+MAX_OUTPUT_BYTES = 256 * 1024
+MANAGED_EMOJI_PREFIX = "milktext_"
+APPLICATION_EMOJI_LIMIT = 2000
+EMOJI_USAGE_FILE = Path("data/application_emoji_usage.json")
 
 BACKGROUND_COLORS: dict[str, tuple[int, int, int, int]] = {
     "transparent": (0, 0, 0, 0),
@@ -73,6 +80,110 @@ class RenderedEmojiText:
     data: io.BytesIO
     filename: str
     grapheme_count: int
+
+
+@dataclass(frozen=True)
+class EmojiOutputPart:
+    literal: str | None = None
+    image: bytes | None = None
+
+
+class ApplicationEmojiStore:
+    """Persistent, name-addressed cache backed by Discord application emojis."""
+
+    def __init__(self, client: discord.Client) -> None:
+        self.client = client
+        try:
+            configured_limit = int(os.getenv("MILK_EMOJI_CACHE_LIMIT", "1800"))
+        except ValueError:
+            configured_limit = 1800
+        self.cache_limit = max(16, min(1900, configured_limit))
+        self._lock = asyncio.Lock()
+        self._loaded = False
+        self._total_count = 0
+        self._managed: dict[str, discord.Emoji] = {}
+        self._last_used: dict[str, float] = {}
+
+    def _load_usage(self) -> dict[str, float]:
+        try:
+            data = json.loads(EMOJI_USAGE_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {
+            str(name): float(timestamp)
+            for name, timestamp in data.items()
+            if isinstance(name, str) and isinstance(timestamp, (int, float))
+        }
+
+    @staticmethod
+    def _write_usage(data: dict[str, float]) -> None:
+        EMOJI_USAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        temporary = EMOJI_USAGE_FILE.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        temporary.replace(EMOJI_USAGE_FILE)
+
+    async def _load(self) -> None:
+        if self._loaded:
+            return
+        emojis = await self.client.fetch_application_emojis()
+        self._total_count = len(emojis)
+        self._managed = {
+            emoji.name: emoji
+            for emoji in emojis
+            if emoji.name and emoji.name.startswith(MANAGED_EMOJI_PREFIX)
+        }
+        self._last_used = {
+            name: timestamp
+            for name, timestamp in self._load_usage().items()
+            if name in self._managed
+        }
+        self._loaded = True
+
+    async def _make_room(self) -> None:
+        while (
+            len(self._managed) >= self.cache_limit
+            or self._total_count >= APPLICATION_EMOJI_LIMIT
+        ):
+            if not self._managed:
+                raise EmojiTextError(
+                    "애플리케이션 이모지 슬롯이 가득 찼고 정리할 글자 이모지가 없어요."
+                )
+            least_recent = min(
+                self._managed.values(),
+                key=lambda emoji: (self._last_used.get(emoji.name, 0.0), emoji.id),
+            )
+            await least_recent.delete()
+            self._managed.pop(least_recent.name, None)
+            self._last_used.pop(least_recent.name, None)
+            self._total_count -= 1
+
+    async def get_or_create(self, image: bytes) -> discord.Emoji:
+        digest = hashlib.sha256(image).hexdigest()[:20]
+        name = f"{MANAGED_EMOJI_PREFIX}{digest}"
+        async with self._lock:
+            await self._load()
+            cached = self._managed.get(name)
+            if cached is not None:
+                self._last_used[name] = time.time()
+                return cached
+            await self._make_room()
+            emoji = await self.client.create_application_emoji(name=name, image=image)
+            self._managed[name] = emoji
+            self._last_used[name] = time.time()
+            self._total_count += 1
+            return emoji
+
+    async def flush_usage(self) -> None:
+        async with self._lock:
+            if not self._loaded:
+                return
+            snapshot = dict(self._last_used)
+        await asyncio.to_thread(self._write_usage, snapshot)
 
 
 def decode_escapes(value: str) -> str:
@@ -257,7 +368,11 @@ def _compressed_base(
     draw = ImageDraw.Draw(image)
     margin = 18
     if background[3]:
-        draw.rounded_rectangle((2, 2, 253, 253), radius=48, fill=background)
+        draw.rounded_rectangle(
+            (2, 2, COMPRESSED_SIZE - 3, COMPRESSED_SIZE - 3),
+            radius=COMPRESSED_SIZE // 5,
+            fill=background,
+        )
     lines = value.replace("\r", "").expandtabs(4).split("\n")
     if len(lines) == 1 and len(split_graphemes(lines[0])) > 8:
         graphemes = split_graphemes(lines[0])
@@ -365,14 +480,13 @@ def _save_gif(frames: list[Image.Image]) -> io.BytesIO:
     return output
 
 
-def render_emoji_text(
+def _prepare_render(
     text: str,
     *,
-    background: str = "transparent",
-    font_style: str = "sans",
-    effect: str = "none",
-    compress: bool = False,
-) -> RenderedEmojiText:
+    background: str,
+    font_style: str,
+    effect: str,
+) -> tuple[str, int, list[list[str]]]:
     decoded = decode_escapes(text)
     if not decoded:
         raise EmojiTextError("내용을 한 글자 이상 입력해주세요.")
@@ -389,10 +503,27 @@ def render_emoji_text(
         raise EmojiTextError("지원하지 않는 폰트예요.")
     if effect not in {"none", "glow", "rainbow", "fire"}:
         raise EmojiTextError("지원하지 않는 효과예요.")
-    color = BACKGROUND_COLORS[background]
     lines = _expanded_lines(decoded)
     if len(lines) > MAX_LINES:
         raise EmojiTextError(f"줄바꿈 후 최대 {MAX_LINES}줄까지 변환할 수 있어요.")
+    return decoded, grapheme_count, lines
+
+
+def render_emoji_text(
+    text: str,
+    *,
+    background: str = "transparent",
+    font_style: str = "sans",
+    effect: str = "none",
+    compress: bool = False,
+) -> RenderedEmojiText:
+    decoded, grapheme_count, lines = _prepare_render(
+        text,
+        background=background,
+        font_style=font_style,
+        effect=effect,
+    )
+    color = BACKGROUND_COLORS[background]
 
     def make_base(foreground: tuple[int, int, int, int] | None = None) -> Image.Image:
         if compress:
@@ -413,6 +544,68 @@ def render_emoji_text(
     else:
         frames = [_fire_frame(base, index) for index in range(10)]
     return RenderedEmojiText(_save_gif(frames), f"emoji-text-{effect}.gif", grapheme_count)
+
+
+def render_emoji_output_parts(
+    text: str,
+    *,
+    background: str = "transparent",
+    font_style: str = "sans",
+    effect: str = "none",
+    compress: bool = False,
+) -> list[EmojiOutputPart]:
+    decoded, _grapheme_count, _lines = _prepare_render(
+        text,
+        background=background,
+        font_style=font_style,
+        effect=effect,
+    )
+    if compress:
+        rendered = render_emoji_text(
+            decoded,
+            background=background,
+            font_style=font_style,
+            effect=effect,
+            compress=True,
+        )
+        return [EmojiOutputPart(image=rendered.data.getvalue())]
+
+    parts: list[EmojiOutputPart] = []
+    rendered_by_grapheme: dict[str, bytes] = {}
+    expanded = decoded.replace("\r\n", "\n").replace("\r", "\n").expandtabs(4)
+    for grapheme in split_graphemes(expanded):
+        if grapheme == "\n":
+            parts.append(EmojiOutputPart(literal="\n"))
+            continue
+        if grapheme.isspace():
+            parts.append(EmojiOutputPart(literal=" "))
+            continue
+        image = rendered_by_grapheme.get(grapheme)
+        if image is None:
+            rendered = render_emoji_text(
+                grapheme,
+                background=background,
+                font_style=font_style,
+                effect=effect,
+                compress=True,
+            )
+            image = rendered.data.getvalue()
+            rendered_by_grapheme[grapheme] = image
+        parts.append(EmojiOutputPart(image=image))
+    return parts
+
+
+def split_output_messages(tokens: list[str], limit: int = 1900) -> list[str]:
+    messages: list[str] = []
+    current = ""
+    for token in tokens:
+        if len(current) + len(token) > limit and current:
+            messages.append(current.rstrip())
+            current = ""
+        current += token
+    if current:
+        messages.append(current.rstrip())
+    return [message for message in messages if message]
 
 
 BACKGROUND_CHOICES = [
@@ -439,7 +632,9 @@ EFFECT_CHOICES = [
 
 
 def register_emoji_text_command(tree: app_commands.CommandTree) -> None:
-    @tree.command(name="글자이모지", description="문자열을 글자별 이모지 이미지 또는 한 개의 이모지로 만듭니다.")
+    emoji_store = ApplicationEmojiStore(tree.client)
+
+    @tree.command(name="글자이모지", description="문자열을 실제 앱 이모지로 변환하거나 한 개에 압축합니다.")
     @app_commands.describe(
         text=r"변환할 내용 (\n, \t, \\, \uNNNN 사용 가능)",
         background="이모지 타일의 배경색",
@@ -458,23 +653,46 @@ def register_emoji_text_command(tree: app_commands.CommandTree) -> None:
     ) -> None:
         await interaction.response.defer(thinking=True)
         try:
-            rendered = await asyncio.to_thread(
-                render_emoji_text,
+            parts = await asyncio.to_thread(
+                render_emoji_output_parts,
                 text,
                 background=background.value if background else "transparent",
                 font_style=font.value if font else "sans",
                 effect=effect.value if effect else "none",
                 compress=compress,
             )
+            output_tokens: list[str] = []
+            for part in parts:
+                if part.literal is not None:
+                    output_tokens.append(part.literal)
+                elif part.image is not None:
+                    emoji = await emoji_store.get_or_create(part.image)
+                    output_tokens.append(str(emoji))
+            messages = split_output_messages(output_tokens)
         except EmojiTextError as exc:
             await interaction.followup.send(str(exc), ephemeral=True)
             return
+        except discord.HTTPException as exc:
+            if exc.status == 429:
+                message = "Discord 이모지 생성 제한에 도달했어요. 잠시 후 다시 시도해주세요."
+            else:
+                message = "Discord 애플리케이션 이모지를 만들지 못했어요. 잠시 후 다시 시도해주세요."
+            await interaction.followup.send(message, ephemeral=True)
+            return
         except Exception:
             await interaction.followup.send(
-                "이모지 이미지를 만드는 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
+                "글자 이모지를 만드는 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
                 ephemeral=True,
             )
             return
-        file = discord.File(rendered.data, filename=rendered.filename)
-        mode = "한 개로 압축" if compress else f"{rendered.grapheme_count}글자 변환"
-        await interaction.followup.send(content=f"{mode} 완료!", file=file)
+        finally:
+            try:
+                await emoji_store.flush_usage()
+            except OSError:
+                pass
+
+        for index, message in enumerate(messages):
+            if index == 0:
+                await interaction.followup.send(content=message)
+            else:
+                await interaction.followup.send(content=message, wait=True)

@@ -1,5 +1,6 @@
 discord.py>=2.5,<3
 aiohttp
+lxml>=5,<7
 python-dotenv
 yt-dlp
 opencv-python-headless

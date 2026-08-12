@@ -6,6 +6,23 @@ random personal discord bot
 - `DISCORD_TOKEN`: Discord bot token
 - `BOT_DEVELOPER_ID`: bot developer Discord user ID
 
+## maishift profile tracker
+
+The bot can persistently track public maishift profiles per Discord channel.
+
+- `/마이시프트추적 프로필명:<name>`: validate the public profile and save a baseline
+- `/마이시프트추적해제 프로필명:<name>`: remove this channel's subscription
+- `/마이시프트추적목록`: list this channel's subscriptions
+
+The SQLite database is created and migrated automatically at
+`data/maishift.sqlite3`. Optional `MAISHIFT_*` settings are documented in
+`.env.example`. The production poll interval defaults to 60 seconds. Run a
+read-only live parser check manually with:
+
+```bash
+python -m maishift.smoke shiftpsh
+```
+
 ## 글자 이모지 명령어
 
 `/글자이모지`는 입력한 문자열의 각 글자를 Discord 애플리케이션 이모지로 변환해

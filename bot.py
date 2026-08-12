@@ -13,6 +13,10 @@ from emoji_text import register_emoji_text_command
 from help_commands import build_server_help_embeds
 from milk_agent_client import MilkAgentConfig, MilkAgentMessageHandler
 from messages import get_message
+from maishift.client import MaishiftClient
+from maishift.repository import MaishiftRepository
+from maishift.tracker import MaishiftTracker
+from maishift_commands import register_maishift_commands
 from random_song_command import (
     build_chunithm_probability_table_embed,
     build_maimai_probability_table_embed,
@@ -52,9 +56,35 @@ intents.message_content = True
 intents.messages = True
 intents.dm_messages = True
 
-client = discord.Client(intents=intents)
+class MilkBotClient(discord.Client):
+    maishift_tracker: MaishiftTracker | None = None
+    _maishift_closed = False
+
+    async def close(self) -> None:
+        if self.maishift_tracker is not None and not self._maishift_closed:
+            await self.maishift_tracker.stop()
+            self.maishift_tracker.repository.close()
+            self._maishift_closed = True
+        await super().close()
+
+
+client = MilkBotClient(intents=intents)
 tree = app_commands.CommandTree(client)
 milk_agent_handler = MilkAgentMessageHandler(MilkAgentConfig.from_env())
+maishift_repository = MaishiftRepository(
+    os.getenv("MAISHIFT_DB_PATH", "data/maishift.sqlite3")
+)
+maishift_client = MaishiftClient(
+    timeout=float(os.getenv("MAISHIFT_HTTP_TIMEOUT_SEC", "10")),
+    concurrency=int(os.getenv("MAISHIFT_HTTP_CONCURRENCY", "5")),
+)
+maishift_tracker = MaishiftTracker(
+    client,
+    maishift_repository,
+    maishift_client,
+    interval=float(os.getenv("MAISHIFT_POLL_INTERVAL_SEC", "60")),
+)
+client.maishift_tracker = maishift_tracker
 
 _synced = False
 _update_dm_sent = False
@@ -62,6 +92,7 @@ _update_dm_sent = False
 register_random_song_command(tree)
 register_utage_command(tree)
 register_emoji_text_command(tree)
+register_maishift_commands(tree, maishift_repository, maishift_client)
 
 
 @client.event
@@ -76,6 +107,8 @@ async def on_ready():
     if not _update_dm_sent:
         await notify_developer_update()
         _update_dm_sent = True
+
+    await maishift_tracker.start()
 
     print(f"Logged in as {client.user}")
 

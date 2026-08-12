@@ -44,14 +44,14 @@ BACKGROUND_COLORS: dict[str, tuple[int, int, int, int]] = {
 
 FONT_CANDIDATES: dict[str, tuple[str, ...]] = {
     "sans": (
-        "fonts/NotoSansKR-Regular.ttf",
+        "fonts/NotoSansKR-Variable.ttf",
         "C:/Windows/Fonts/malgun.ttf",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ),
     "bold": (
-        "fonts/NotoSansKR-Bold.ttf",
+        "fonts/NotoSansKR-Variable.ttf",
         "C:/Windows/Fonts/malgunbd.ttf",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
         "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
@@ -61,11 +61,14 @@ FONT_CANDIDATES: dict[str, tuple[str, ...]] = {
         "C:/Windows/Fonts/batang.ttc",
         "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
         "/usr/share/fonts/truetype/nanum/NanumMyeongjo.ttf",
+        "fonts/NotoSansKR-Variable.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
     ),
     "mono": (
-        "C:/Windows/Fonts/consola.ttf",
         "/usr/share/fonts/truetype/nanum/NanumGothicCoding.ttf",
+        "C:/Windows/Fonts/D2Coding.ttf",
+        "fonts/NotoSansKR-Variable.ttf",
+        "C:/Windows/Fonts/consola.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
     ),
 }
@@ -277,7 +280,12 @@ def _font_path(style: str) -> str:
 
 
 def _font(style: str, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(_font_path(style), size=size)
+    font = ImageFont.truetype(_font_path(style), size=size)
+    try:
+        font.set_variation_by_name("Bold" if style == "bold" else "Regular")
+    except (AttributeError, OSError):
+        pass
+    return font
 
 
 def _foreground(background: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
@@ -405,34 +413,106 @@ def _add_glow(base: Image.Image) -> Image.Image:
     return Image.alpha_composite(glow, base)
 
 
-def _fire_frame(base: Image.Image, frame_index: int) -> Image.Image:
-    flames = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(flames)
-    rng = random.Random(6_500 + frame_index)
-    width, height = base.size
-    step = max(14, width // 28)
-    baseline = height - max(5, height // 30)
-    for x in range(-step, width + step, step):
-        wave = math.sin((x / max(1, width)) * math.tau * 3 + frame_index * 0.8)
-        flame_height = max(18, int(height * (0.09 + 0.055 * rng.random() + 0.025 * wave)))
-        half = max(8, step)
-        draw.polygon(
+def _fire_anchors(mask: Image.Image) -> list[tuple[int, int]]:
+    pixels = mask.load()
+    width, height = mask.size
+    step = max(3, width // 28)
+    anchors: list[tuple[int, int]] = []
+    for x in range(1, width - 1, step):
+        visible = [y for y in range(1, height - 1) if pixels[x, y] > 80]
+        if visible:
+            anchors.append((x, min(visible)))
+    return anchors
+
+
+def _fire_frame(background: Image.Image, glyph_mask: Image.Image, frame_index: int) -> Image.Image:
+    width, height = background.size
+    scale = max(0.55, min(width, height) / 128)
+    rng = random.Random(81_000 + frame_index)
+    anchors = _fire_anchors(glyph_mask)
+
+    # A hot halo and charred outline keep the glyph readable even when flames overlap it.
+    glow_alpha = glyph_mask.filter(ImageFilter.GaussianBlur(max(3, round(7 * scale))))
+    glow = Image.new("RGBA", background.size, (255, 54, 0, 0))
+    glow.putalpha(glow_alpha.point(lambda value: min(150, value)))
+    frame = Image.alpha_composite(background, glow)
+
+    outline_mask = glyph_mask.filter(ImageFilter.MaxFilter(5))
+    outline = Image.new("RGBA", background.size, (70, 8, 0, 0))
+    outline.putalpha(outline_mask)
+    frame = Image.alpha_composite(frame, outline)
+
+    flames = Image.new("RGBA", background.size, (0, 0, 0, 0))
+    flame_draw = ImageDraw.Draw(flames)
+    for anchor_index, (x, y) in enumerate(anchors):
+        if (anchor_index + frame_index) % 2 and rng.random() < 0.48:
+            continue
+        half_width = max(2, round(scale * rng.uniform(3.0, 6.0)))
+        flame_height = max(7, round(scale * rng.uniform(12.0, 30.0)))
+        lean = round(scale * math.sin(frame_index * 0.9 + x * 0.16) * 5)
+        tip_x = x + lean + rng.randint(-2, 2)
+        root_y = min(height - 1, y + max(2, round(4 * scale)))
+        flame_draw.polygon(
             [
-                (x - half, baseline),
-                (x - half // 2, baseline - flame_height // 2),
-                (x + rng.randint(-half // 3, half // 3), baseline - flame_height),
-                (x + half // 2, baseline - flame_height // 2),
-                (x + half, baseline),
+                (x - half_width, root_y),
+                (x - half_width // 2, y - flame_height // 3),
+                (tip_x, max(0, y - flame_height)),
+                (x + half_width // 2, y - flame_height // 3),
+                (x + half_width, root_y),
             ],
-            fill=(255, 74, 20, 220),
+            fill=(202, 20, 0, 235),
         )
-        inner_height = int(flame_height * 0.62)
-        draw.ellipse(
-            (x - half // 2, baseline - inner_height, x + half // 2, baseline + 2),
-            fill=(255, 205, 45, 225),
+        inner_height = max(4, round(flame_height * 0.62))
+        inner_half = max(1, half_width // 2)
+        flame_draw.polygon(
+            [
+                (x - inner_half, root_y),
+                (x, max(0, y - inner_height)),
+                (x + inner_half, root_y),
+            ],
+            fill=(255, 214, 35, 245),
         )
-    flames = flames.filter(ImageFilter.GaussianBlur(max(1, min(base.size) // 180)))
-    return Image.alpha_composite(base, flames)
+    flames = flames.filter(ImageFilter.GaussianBlur(max(1, round(scale))))
+    frame = Image.alpha_composite(frame, flames)
+
+    # Molten red/orange fill with moving yellow hot spots, inspired by burning-logo art.
+    molten = Image.new("RGBA", background.size, (0, 0, 0, 0))
+    molten_draw = ImageDraw.Draw(molten)
+    for y in range(height):
+        phase = math.sin(y * 0.22 + frame_index * 0.75)
+        molten_draw.line(
+            (0, y, width, y),
+            fill=(255, round(70 + 38 * (phase + 1) / 2), 5, 255),
+        )
+    for _ in range(max(18, width // 3)):
+        x = rng.randrange(width)
+        y = rng.randrange(height)
+        radius = rng.choice((1, 1, 2, 3))
+        molten_draw.ellipse(
+            (x - radius, y - radius, x + radius, y + radius),
+            fill=(255, rng.randint(165, 245), rng.randint(20, 75), 255),
+        )
+    molten.putalpha(glyph_mask)
+    frame = Image.alpha_composite(frame, molten)
+
+    # Smoke and sparks rise above the hottest top edges.
+    particles = Image.new("RGBA", background.size, (0, 0, 0, 0))
+    particle_draw = ImageDraw.Draw(particles)
+    if anchors:
+        for _ in range(max(5, len(anchors) // 2)):
+            x, y = rng.choice(anchors)
+            rise = round(scale * rng.uniform(9, 34))
+            drift = round(scale * math.sin(frame_index * 0.6 + x) * rng.uniform(2, 8))
+            if rng.random() < 0.55:
+                radius = max(1, round(scale * rng.uniform(1, 3)))
+                particle_draw.ellipse(
+                    (x + drift - radius, y - rise - radius, x + drift + radius, y - rise + radius),
+                    fill=(45, 30, 28, rng.randint(70, 145)),
+                )
+            else:
+                particle_draw.point((x + drift, max(0, y - rise)), fill=(255, 210, 35, 255))
+    particles = particles.filter(ImageFilter.GaussianBlur(max(0.4, scale * 0.55)))
+    return Image.alpha_composite(frame, particles)
 
 
 def _save_png(image: Image.Image) -> io.BytesIO:
@@ -542,7 +622,16 @@ def render_emoji_text(
             foreground = tuple(round(channel * 255) for channel in rgb) + (255,)
             frames.append(make_base(foreground))
     else:
-        frames = [_fire_frame(base, index) for index in range(10)]
+        transparent = (0, 0, 0, 0)
+        white = (255, 255, 255, 255)
+        if compress:
+            fire_background = _compressed_base(" ", color, font_style)
+            glyph_mask = _compressed_base(decoded, transparent, font_style, white).getchannel("A")
+        else:
+            blank_lines = [[" " for _grapheme in line] for line in lines]
+            fire_background = _normal_base(blank_lines, color, font_style)
+            glyph_mask = _normal_base(lines, transparent, font_style, white).getchannel("A")
+        frames = [_fire_frame(fire_background, glyph_mask, index) for index in range(12)]
     return RenderedEmojiText(_save_gif(frames), f"emoji-text-{effect}.gif", grapheme_count)
 
 
@@ -636,7 +725,7 @@ def register_emoji_text_command(tree: app_commands.CommandTree) -> None:
 
     @tree.command(name="글자이모지", description="문자열을 실제 앱 이모지로 변환하거나 한 개에 압축합니다.")
     @app_commands.describe(
-        text=r"변환할 내용 (\n, \t, \\, \uNNNN 사용 가능)",
+        text=r"변환할 내용 (\n 등 이스케이프 사용 가능)",
         background="이모지 타일의 배경색",
         font="글꼴",
         effect="정적/애니메이션 효과",

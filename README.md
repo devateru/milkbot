@@ -15,16 +15,13 @@ random personal discord bot
 - `background`: 투명, 우유색, 검정, 흰색, 분홍, 파랑, 초록
 - `font`: 고딕, 굵은 고딕, 명조, 고정폭
 - `effect`: 없음, 네온 글로우, 무지개 GIF, 불꽃 GIF
-- 지원 이스케이프: `\n`, `\r`, `\t`, `\\`, `\xNN`, `\uNNNN`, `\UNNNNNNNN`
+- `\n` 등의 이스케이프 시퀀스를 사용할 수 있습니다.
 - 최대 64글자이며 긴 줄은 12글자마다 자동 줄바꿈됩니다.
 - 생성한 이모지는 애플리케이션에 캐시됩니다. 기본 1,800개를 넘으면 마지막 사용
   시각이 가장 오래된 글자 이모지부터 삭제합니다. `MILK_EMOJI_CACHE_LIMIT`로 조절할 수 있습니다.
 
-한글 렌더링을 위해 Ubuntu 서버에는 Noto CJK 또는 나눔글꼴이 필요합니다.
-
-```bash
-sudo apt-get install fonts-noto-cjk fonts-nanum
-```
+한글 렌더링은 저장소에 포함된 Noto Sans KR 폰트를 사용하므로 서버 글꼴 설치에
+의존하지 않습니다. 폰트 라이선스는 `fonts/OFL-NotoSansKR.txt`에 있습니다.
 
 ## 밀크짱 로컬 LLM 구조
 

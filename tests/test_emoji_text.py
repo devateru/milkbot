@@ -8,6 +8,7 @@ from PIL import Image
 from emoji_text import (
     EmojiTextError,
     ApplicationEmojiStore,
+    MAX_OUTPUT_BYTES,
     decode_escapes,
     render_emoji_text,
     render_emoji_output_parts,
@@ -55,7 +56,8 @@ class RenderEmojiTextTests(unittest.TestCase):
         self.assertEqual(rendered.filename, "emoji-text-fire.gif")
         with Image.open(rendered.data) as image:
             self.assertEqual(image.format, "GIF")
-            self.assertGreater(image.n_frames, 1)
+            self.assertEqual(image.n_frames, 12)
+        self.assertLessEqual(rendered.data.getbuffer().nbytes, MAX_OUTPUT_BYTES)
 
     def test_rejects_too_many_characters(self) -> None:
         with self.assertRaises(EmojiTextError):

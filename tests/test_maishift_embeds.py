@@ -7,7 +7,7 @@ import json
 import unittest
 
 from maishift.diff import diff_snapshots
-from maishift.embeds import build_maishift_update_embeds
+from maishift.embeds import INDENT, build_maishift_update_embeds
 from maishift.sample import build_maishift_test_embeds
 from tests.test_maishift_diff import entry, snapshot
 
@@ -45,16 +45,20 @@ class MaishiftEmbedTests(unittest.TestCase):
             "구곡 BEST",
         )
 
-        self.assertIn("   [310] **Neon Kingdom** (DX, 13.8) 100.5674%", value)
+        self.assertIn(f"{INDENT}[310] **Neon Kingdom** (DX, 13.8) 100.5674%", value)
+        self.assertNotIn("   [310]", value)
         self.assertIn(
             "→ [317] **Don't Fight The Music** (DX, 14.1) 100.5384% **(+7)**",
             value,
+        )
+        self.assertTrue(
+            any(line.startswith("→ [317]") for line in value.splitlines())
         )
         self.assertIn("섹션 레이팅 변화: **+7**", value)
         self.assertNotIn("IN **Don't Fight The Music**", value)
         self.assertNotIn("OUT **Neon Kingdom**", value)
 
-    def test_same_chart_update_is_compact_and_includes_grade(self) -> None:
+    def test_same_chart_update_is_compact_and_hides_grade(self) -> None:
         before_entry = _with_display(
             entry("chart:1", "Don't Fight The Music", 307, "99.1384", "SS+")
         )
@@ -77,7 +81,7 @@ class MaishiftEmbedTests(unittest.TestCase):
             value,
         )
         self.assertIn("99.1384% → 100.5384% (+1.4000%)", value)
-        self.assertIn("SS+ → SSS+", value)
+        self.assertNotIn("SS+ → SSS+", value)
 
     def test_replacement_delta_supports_zero_and_negative_values(self) -> None:
         for added_rating, expected in ((310, "+0"), (307, "-3")):
@@ -204,5 +208,7 @@ class MaishiftEmbedTests(unittest.TestCase):
         self.assertIn("[TEST]", embed.title)
         self.assertIn("[307 → 317] **Test Song A**", value)
         self.assertIn("99.1384% → 100.5384% (+1.4000%)", value)
-        self.assertIn("   [310] **Test Song B** (DX, 13.8) 100.5674%", value)
+        self.assertIn(f"{INDENT}[310] **Test Song B** (DX, 13.8) 100.5674%", value)
+        self.assertNotIn("   [310]", value)
         self.assertIn("→ [317] **Test Song C** (DX, 14.1) 100.5384% **(+7)**", value)
+        self.assertNotIn("SS+ → SSS+", value)

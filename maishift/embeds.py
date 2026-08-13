@@ -8,6 +8,9 @@ from .diff import EntryChange, MaishiftDiff, SectionDiff
 from .models import MaishiftBestEntry, MaishiftSnapshot
 
 
+INDENT = "\u00A0" * 3
+
+
 def _delta(value: int) -> str:
     return f"{value:+,}"
 
@@ -32,8 +35,6 @@ def _change_lines(change: EntryChange) -> list[str]:
             f"{old.achievement:.4f}% → {new.achievement:.4f}% "
             f"({_achievement_delta(change.achievement_delta)})"
         )
-    if old.grade != new.grade:
-        lines.append(f"{old.grade} → {new.grade}")
     return lines
 
 
@@ -49,7 +50,7 @@ def _replacement_lines(removed: MaishiftBestEntry, added: MaishiftBestEntry) -> 
     replacement_delta = added.rating - removed.rating
     return "\n".join(
         (
-            _entry_line(removed, prefix="   "),
+            _entry_line(removed, prefix=INDENT),
             f"→ {_entry_line(added)} **({_delta(replacement_delta)})**",
         )
     )

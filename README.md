@@ -13,6 +13,12 @@ The bot can persistently track public maishift profiles per Discord channel.
 - `/마이시프트추적 프로필명:<name>`: validate the public profile and save a baseline
 - `/마이시프트추적해제 프로필명:<name>`: remove this channel's subscription
 - `/마이시프트추적목록`: list this channel's subscriptions
+- `/마이시프트레이팅 프로필명:<name>`: query the current public profile without subscribing
+
+Developer-only direct messages:
+
+- `마싶테스트`: send a deterministic sample through the production update Embed builder
+- `마싶동기화`: silently refresh every subscribed profile baseline without channel notifications
 
 The SQLite database is created and migrated automatically at
 `data/maishift.sqlite3`. Optional `MAISHIFT_*` settings are documented in
@@ -21,6 +27,7 @@ read-only live parser check manually with:
 
 ```bash
 python -m maishift.smoke shiftpsh
+python -m maishift.resync
 ```
 
 ## 글자 이모지 명령어

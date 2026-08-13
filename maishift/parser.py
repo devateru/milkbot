@@ -108,7 +108,16 @@ def _embedded_script(document: HtmlElement) -> str:
     return script
 
 
-def _extract_profile(script: str) -> tuple[str, int, int, int | None, datetime, str]:
+def _parse_embedded_datetime(value: str, field_name: str) -> datetime:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise MaishiftParseError(f"invalid {field_name} timestamp") from exc
+
+
+def _extract_profile(
+    script: str,
+) -> tuple[str, int, int, int | None, datetime, datetime | None, str]:
     match = re.search(r"profile:\$R\[\d+\]=\{", script)
     if not match:
         raise MaishiftParseError("profile object is missing")
@@ -117,19 +126,23 @@ def _extract_profile(script: str) -> tuple[str, int, int, int | None, datetime, 
     rating = _field_int(obj, "rating")
     play_match = re.search(r"playCount:\$R\[\d+\]=\{total:(\d+),current:(\d+)\}", obj)
     created_match = re.search(r'createdAt:\$R\[\d+\]=new Date\("([^"\r\n]+)"\)', obj)
+    updated_match = re.search(r'updatedAt:\$R\[\d+\]=new Date\("([^"\r\n]+)"\)', obj)
     if player_name is None or rating is None or not play_match or not created_match:
         raise MaishiftParseError("required profile fields are missing")
     timestamp_raw = created_match.group(1)
-    try:
-        timestamp = datetime.fromisoformat(timestamp_raw.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise MaishiftParseError("invalid machine-readable update timestamp") from exc
+    created_at = _parse_embedded_datetime(timestamp_raw, "createdAt")
+    updated_at = (
+        _parse_embedded_datetime(updated_match.group(1), "updatedAt")
+        if updated_match
+        else None
+    )
     return (
         normalize_text(player_name),
         rating,
         int(play_match.group(1)),
         int(play_match.group(2)),
-        timestamp,
+        created_at,
+        updated_at,
         timestamp_raw,
     )
 
@@ -325,7 +338,15 @@ def parse_maishift_profile(
     if any(marker.casefold() in page_text.casefold() for marker in PRIVATE_MARKERS):
         raise MaishiftInvalidOrPrivateError("profile is missing or private")
     script = _embedded_script(document)
-    player_name, total_rating, play_count, secondary, update_dt, update_raw = _extract_profile(script)
+    (
+        player_name,
+        total_rating,
+        play_count,
+        secondary,
+        created_at,
+        updated_at,
+        update_raw,
+    ) = _extract_profile(script)
     new_best = _parse_section(document, script, "New Songs")
     old_best = _parse_section(document, script, "Old Songs")
     if len(new_best) > 15 or len(old_best) > 35:
@@ -344,9 +365,13 @@ def parse_maishift_profile(
         play_count=play_count,
         secondary_play_count=secondary,
         last_update_raw=_extract_last_update_raw(document, update_raw),
-        last_update_datetime=update_dt,
+        # The rendered "last update" text matches embedded createdAt on the
+        # live site. updatedAt is preserved separately as internal metadata.
+        last_update_datetime=created_at,
         game_version=_extract_game_version(document),
         new_best=new_best,
         old_best=old_best,
         checked_at=checked_at or datetime.now(timezone.utc),
+        created_at=created_at,
+        updated_at=updated_at,
     )

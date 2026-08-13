@@ -30,6 +30,15 @@ class Subscription:
     profile_url: str
 
 
+@dataclass(frozen=True, slots=True)
+class DeliveryRecord:
+    update_id: str
+    channel_id: int
+    profile_key: str
+    payload_json: str
+    attempt_count: int
+
+
 class MaishiftRepository:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -77,10 +86,30 @@ class MaishiftRepository:
                     profile_key TEXT NOT NULL,
                     status TEXT NOT NULL,
                     attempted_at TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    next_retry_at TEXT,
+                    payload_json TEXT,
                     PRIMARY KEY(update_id, channel_id)
                 );
                 """
             )
+            columns = {
+                row[1]
+                for row in self._connection.execute(
+                    "PRAGMA table_info(maishift_deliveries)"
+                ).fetchall()
+            }
+            for name, definition in (
+                ("attempt_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("last_error", "TEXT"),
+                ("next_retry_at", "TEXT"),
+                ("payload_json", "TEXT"),
+            ):
+                if name not in columns:
+                    self._connection.execute(
+                        f"ALTER TABLE maishift_deliveries ADD COLUMN {name} {definition}"
+                    )
 
     @staticmethod
     def _now() -> datetime:
@@ -237,6 +266,29 @@ class MaishiftRepository:
             ).fetchall()
         return [self._profile(row) for row in rows]
 
+    def all_subscribed_profiles(self) -> list[ProfileRecord]:
+        """Return every unique subscribed profile, ignoring polling backoff."""
+
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT p.* FROM maishift_profiles p
+                WHERE EXISTS (
+                    SELECT 1 FROM maishift_subscriptions s WHERE s.profile_key=p.profile_key
+                )
+                ORDER BY p.profile_key
+                """
+            ).fetchall()
+        return [self._profile(row) for row in rows]
+
+    def subscription_count(self) -> int:
+        with self._lock:
+            return int(
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM maishift_subscriptions"
+                ).fetchone()[0]
+            )
+
     def get_profile(self, profile_key: str) -> ProfileRecord | None:
         with self._lock:
             row = self._connection.execute(
@@ -321,27 +373,137 @@ class MaishiftRepository:
                 ),
             )
 
-    def claim_delivery(self, update_id: str, channel_id: int, profile_key: str) -> bool:
+    def claim_delivery(
+        self,
+        update_id: str,
+        channel_id: int,
+        profile_key: str,
+        *,
+        payload_json: str | None = None,
+        max_attempts: int = 3,
+        stale_pending_seconds: float = 300.0,
+        now: datetime | None = None,
+    ) -> bool:
+        current = now or self._now()
+        stale_before = current - timedelta(seconds=stale_pending_seconds)
         with self._lock, self._connection:
             cursor = self._connection.execute(
                 """
                 INSERT OR IGNORE INTO maishift_deliveries
-                    (update_id, channel_id, profile_key, status, attempted_at)
-                VALUES (?, ?, ?, 'pending', ?)
+                    (update_id, channel_id, profile_key, status, attempted_at,
+                     attempt_count, payload_json)
+                VALUES (?, ?, ?, 'pending', ?, 1, ?)
                 """,
-                (update_id, channel_id, profile_key, self._now().isoformat()),
+                (update_id, channel_id, profile_key, current.isoformat(), payload_json),
             )
-            return cursor.rowcount == 1
-
-    def finish_delivery(self, update_id: str, channel_id: int, status: str) -> None:
-        with self._lock, self._connection:
+            if cursor.rowcount == 1:
+                return True
+            row = self._connection.execute(
+                """
+                SELECT status, attempted_at, attempt_count, next_retry_at
+                FROM maishift_deliveries WHERE update_id=? AND channel_id=?
+                """,
+                (update_id, channel_id),
+            ).fetchone()
+            if row is None or int(row["attempt_count"]) >= max_attempts:
+                return False
+            retryable = (
+                row["status"] == "failed"
+                and (
+                    row["next_retry_at"] is None
+                    or self._parse_datetime(row["next_retry_at"]) <= current
+                )
+            ) or (
+                row["status"] == "pending"
+                and self._parse_datetime(row["attempted_at"]) <= stale_before
+            )
+            if not retryable:
+                return False
             self._connection.execute(
                 """
-                UPDATE maishift_deliveries SET status=?, attempted_at=?
+                UPDATE maishift_deliveries SET
+                    status='pending', attempted_at=?, attempt_count=attempt_count+1,
+                    last_error=NULL, next_retry_at=NULL,
+                    payload_json=COALESCE(?, payload_json)
                 WHERE update_id=? AND channel_id=?
                 """,
-                (status, self._now().isoformat(), update_id, channel_id),
+                (current.isoformat(), payload_json, update_id, channel_id),
             )
+            return True
+
+    def finish_delivery(
+        self,
+        update_id: str,
+        channel_id: int,
+        status: str,
+        *,
+        error: str | None = None,
+    ) -> None:
+        now = self._now()
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                """
+                SELECT attempt_count FROM maishift_deliveries
+                WHERE update_id=? AND channel_id=?
+                """,
+                (update_id, channel_id),
+            ).fetchone()
+            attempts = int(row["attempt_count"]) if row else 1
+            next_retry = None
+            if status == "failed" and attempts < 3:
+                next_retry = now + timedelta(seconds=min(900, 60 * (2 ** (attempts - 1))))
+            self._connection.execute(
+                """
+                UPDATE maishift_deliveries SET
+                    status=?, attempted_at=?, last_error=?, next_retry_at=?
+                WHERE update_id=? AND channel_id=?
+                """,
+                (
+                    status,
+                    now.isoformat(),
+                    error,
+                    next_retry.isoformat() if next_retry else None,
+                    update_id,
+                    channel_id,
+                ),
+            )
+
+    def retryable_deliveries(
+        self,
+        *,
+        now: datetime | None = None,
+        stale_pending_seconds: float = 300.0,
+        max_attempts: int = 3,
+    ) -> list[DeliveryRecord]:
+        current = now or self._now()
+        stale_before = current - timedelta(seconds=stale_pending_seconds)
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT update_id, channel_id, profile_key, payload_json, attempt_count
+                FROM maishift_deliveries
+                WHERE payload_json IS NOT NULL
+                  AND attempt_count < ?
+                  AND (
+                    (status='failed' AND (next_retry_at IS NULL OR next_retry_at <= ?))
+                    OR (status='pending' AND attempted_at <= ?)
+                  )
+                ORDER BY attempted_at
+                """,
+                (max_attempts, current.isoformat(), stale_before.isoformat()),
+            ).fetchall()
+        return [DeliveryRecord(**dict(row)) for row in rows]
+
+    def delivery_status(self, update_id: str, channel_id: int) -> tuple[str, int] | None:
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT status, attempt_count FROM maishift_deliveries
+                WHERE update_id=? AND channel_id=?
+                """,
+                (update_id, channel_id),
+            ).fetchone()
+        return (row["status"], int(row["attempt_count"])) if row else None
 
     def close(self) -> None:
         with self._lock:

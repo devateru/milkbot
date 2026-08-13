@@ -84,6 +84,8 @@ class MaishiftParserTests(unittest.TestCase):
         self.assertEqual(snapshot.play_count, 42)
         self.assertEqual(snapshot.secondary_play_count, 7)
         self.assertEqual(snapshot.last_update_datetime.isoformat(), "2026-08-12T05:31:00+00:00")
+        self.assertEqual(snapshot.created_at.isoformat(), "2026-08-12T05:31:00+00:00")
+        self.assertEqual(snapshot.updated_at.isoformat(), "2026-08-12T05:32:00+00:00")
         self.assertEqual(snapshot.last_update_raw, "8/12/2026, 2:31:00 PM")
         self.assertEqual(snapshot.game_version, "CiRCLE PLUS week #2 · CiRCLE PLUS")
         self.assertEqual(len(snapshot.new_best), 2)
@@ -109,3 +111,13 @@ class MaishiftParserTests(unittest.TestCase):
     def test_rating_integrity_mismatch_is_rejected(self) -> None:
         with self.assertRaisesRegex(MaishiftParseError, "rating integrity mismatch"):
             self.parse(public_html().replace("rating:1240", "rating:9999", 1))
+
+    def test_missing_updated_at_safely_keeps_displayed_created_at(self) -> None:
+        source = public_html().replace(
+            ',updatedAt:$R[5]=new Date("2026-08-12T05:32:00.000Z")',
+            "",
+            1,
+        )
+        snapshot = self.parse(source)
+        self.assertIsNone(snapshot.updated_at)
+        self.assertEqual(snapshot.last_update_datetime, snapshot.created_at)

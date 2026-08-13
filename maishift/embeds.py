@@ -64,12 +64,15 @@ def _section_value(section: SectionDiff) -> str:
 def build_maishift_update_embeds(
     diff: MaishiftDiff,
     snapshot: MaishiftSnapshot,
+    *,
+    test: bool = False,
 ) -> list[discord.Embed]:
     icon = "📈" if diff.total_rating_delta else "🎮"
     if len(diff.new_section.changes) + len(diff.old_section.changes) > 8:
         icon = "📊"
+    title_prefix = "🧪 [TEST] " if test else ""
     embed = discord.Embed(
-        title=f"{icon} maishift 갱신 — {snapshot.player_name}"[:256],
+        title=f"{title_prefix}{icon} maishift 갱신 — {snapshot.player_name}"[:256],
         url=snapshot.profile_url,
         colour=discord.Colour.green() if diff.total_rating_delta >= 0 else discord.Colour.orange(),
     )
@@ -113,5 +116,8 @@ def build_maishift_update_embeds(
         )
     if not diff.b50_changed:
         embed.add_field(name="BEST 50", value="변화 없음", inline=False)
-    embed.set_footer(text=f"총 레이팅 변화: {_delta(diff.total_rating_delta)}")
+    footer_prefix = "샘플 · " if test else ""
+    embed.set_footer(
+        text=f"{footer_prefix}총 레이팅 변화: {_delta(diff.total_rating_delta)}"
+    )
     return [embed]

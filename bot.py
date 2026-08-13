@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import subprocess
 from datetime import datetime
@@ -17,6 +18,7 @@ from maishift.client import MaishiftClient
 from maishift.repository import MaishiftRepository
 from maishift.tracker import MaishiftTracker
 from maishift_commands import register_maishift_commands
+from maishift_dm_commands import handle_maishift_developer_dm
 from random_song_command import (
     build_chunithm_probability_table_embed,
     build_maimai_probability_table_embed,
@@ -50,6 +52,16 @@ if not BOT_DEVELOPER_ID:
     raise RuntimeError("BOT_DEVELOPER_ID is not set in .env")
 
 BOT_DEVELOPER_ID = int(BOT_DEVELOPER_ID)
+
+maishift_logger = logging.getLogger("maishift")
+maishift_logger.setLevel(os.getenv("MAISHIFT_LOG_LEVEL", "INFO").upper())
+if not maishift_logger.handlers:
+    maishift_handler = logging.StreamHandler()
+    maishift_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    maishift_logger.addHandler(maishift_handler)
+maishift_logger.propagate = False
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -246,7 +258,13 @@ async def on_message(message: discord.Message):
 
     if message.guild is None:
         enabled_guild_ids_before = set(get_allowed_guild_ids())
-        handled = await handle_developer_dm_command(message, client, BOT_DEVELOPER_ID)
+        handled = await handle_maishift_developer_dm(
+            message,
+            BOT_DEVELOPER_ID,
+            maishift_tracker,
+        )
+        if not handled:
+            handled = await handle_developer_dm_command(message, client, BOT_DEVELOPER_ID)
 
         if handled:
             enabled_guild_ids_after = set(get_allowed_guild_ids())

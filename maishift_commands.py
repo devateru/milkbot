@@ -45,6 +45,38 @@ def _format_update(snapshot) -> str:
     )
 
 
+def build_maishift_rating_embed(snapshot) -> discord.Embed:
+    new_rating = sum(entry.rating for entry in snapshot.new_best)
+    old_rating = sum(entry.rating for entry in snapshot.old_best)
+    if new_rating + old_rating != snapshot.total_rating:
+        raise ValueError("maishift rating integrity mismatch")
+    embed = discord.Embed(
+        title=f"🎵 maishift — {snapshot.player_name}"[:256],
+        url=snapshot.profile_url,
+        colour=discord.Colour.blurple(),
+    )
+    embed.add_field(name="레이팅", value=f"**{snapshot.total_rating:,}**", inline=False)
+    embed.add_field(
+        name="신곡 레이팅",
+        value=f"{new_rating:,} / {len(snapshot.new_best)}곡",
+        inline=True,
+    )
+    embed.add_field(
+        name="구곡 레이팅",
+        value=f"{old_rating:,} / {len(snapshot.old_best)}곡",
+        inline=True,
+    )
+    embed.add_field(
+        name="플레이/크레딧",
+        value=f"{snapshot.play_count:,}",
+        inline=False,
+    )
+    embed.add_field(name="마지막 갱신", value=_format_update(snapshot), inline=True)
+    if snapshot.game_version:
+        embed.add_field(name="게임 버전", value=snapshot.game_version, inline=True)
+    return embed
+
+
 def register_maishift_commands(
     tree: app_commands.CommandTree,
     repository: MaishiftRepository,
@@ -146,5 +178,37 @@ def register_maishift_commands(
         await interaction.response.send_message(
             message,
             ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    @tree.command(name="마이시프트레이팅", description="공개 maishift 프로필의 현재 레이팅을 조회해요")
+    @app_commands.rename(profile_name="프로필명")
+    @app_commands.describe(profile_name="조회할 maishift 프로필명")
+    async def maishift_rating(
+        interaction: discord.Interaction,
+        profile_name: str,
+    ) -> None:
+        if not await _check_context(interaction):
+            return
+        profile_name = profile_name.strip()
+        if not profile_name:
+            await interaction.response.send_message("❌ 프로필명을 입력해 줘.", ephemeral=True)
+            return
+        await interaction.response.defer(thinking=True)
+        result = await client.fetch(profile_name)  # Live unconditional lookup.
+        if result.status == FetchStatus.INVALID_OR_PRIVATE:
+            await interaction.followup.send(INVALID_MESSAGE, ephemeral=True)
+            return
+        if result.status != FetchStatus.VALID_PUBLIC or result.snapshot is None:
+            await interaction.followup.send(TEMPORARY_MESSAGE, ephemeral=True)
+            return
+        snapshot = result.snapshot
+        try:
+            embed = build_maishift_rating_embed(snapshot)
+        except ValueError:
+            await interaction.followup.send(TEMPORARY_MESSAGE, ephemeral=True)
+            return
+        await interaction.followup.send(
+            embed=embed,
             allowed_mentions=discord.AllowedMentions.none(),
         )

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
+import hashlib
 import json
 import unicodedata
 from typing import Any
@@ -70,6 +71,8 @@ class MaishiftSnapshot:
     new_best: tuple[MaishiftBestEntry, ...]
     old_best: tuple[MaishiftBestEntry, ...]
     checked_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     @property
     def source_last_update(self) -> str:
@@ -96,6 +99,8 @@ class MaishiftSnapshot:
             "new_best": [entry.to_dict() for entry in self.new_best],
             "old_best": [entry.to_dict() for entry in self.old_best],
             "checked_at": self.checked_at.isoformat(),
+            "created_at": self.created_at.isoformat() if self.created_at is not None else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at is not None else None,
         }
 
     def to_json(self) -> str:
@@ -105,6 +110,8 @@ class MaishiftSnapshot:
     def from_dict(cls, data: dict[str, Any]) -> "MaishiftSnapshot":
         last_update = data.get("last_update_datetime")
         checked_at = data.get("checked_at")
+        created_at = data.get("created_at")
+        updated_at = data.get("updated_at")
         return cls(
             profile_key=str(data["profile_key"]),
             profile_name=str(data["profile_name"]),
@@ -123,8 +130,49 @@ class MaishiftSnapshot:
             new_best=tuple(MaishiftBestEntry.from_dict(item) for item in data["new_best"]),
             old_best=tuple(MaishiftBestEntry.from_dict(item) for item in data["old_best"]),
             checked_at=datetime.fromisoformat(str(checked_at)) if checked_at else datetime.now(timezone.utc),
+            # Older snapshots used createdAt as last_update_datetime without
+            # preserving the two embedded profile timestamps separately.
+            created_at=(
+                datetime.fromisoformat(str(created_at))
+                if created_at
+                else (datetime.fromisoformat(str(last_update)) if last_update else None)
+            ),
+            updated_at=datetime.fromisoformat(str(updated_at)) if updated_at else None,
         )
 
     @classmethod
     def from_json(cls, value: str) -> "MaishiftSnapshot":
         return cls.from_dict(json.loads(value))
+
+
+def snapshot_fingerprint(snapshot: MaishiftSnapshot) -> str:
+    """Return a stable fingerprint of performance content, not fetch metadata."""
+
+    def entry_value(entry: MaishiftBestEntry) -> dict[str, object]:
+        return {
+            "stable_key": entry.stable_key,
+            "achievement": str(entry.achievement),
+            "rating": entry.rating,
+            "grade": entry.grade,
+            "chart_type": entry.chart_type,
+            "difficulty": entry.difficulty,
+        }
+
+    canonical = {
+        "profile_key": snapshot.profile_key,
+        "player_name": snapshot.player_name,
+        "total_rating": snapshot.total_rating,
+        "play_count": snapshot.play_count,
+        "secondary_play_count": snapshot.secondary_play_count,
+        "game_version": snapshot.game_version,
+        # Preserve B15/B35 ordering: a reordering can reflect a changed target list.
+        "new_best": [entry_value(entry) for entry in snapshot.new_best],
+        "old_best": [entry_value(entry) for entry in snapshot.old_best],
+    }
+    payload = json.dumps(
+        canonical,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()

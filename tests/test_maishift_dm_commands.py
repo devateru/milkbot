@@ -68,8 +68,10 @@ class MaishiftDeveloperDmTests(unittest.IsolatedAsyncioTestCase):
         embeds = message.replies[0][1]["embeds"]
         self.assertIn("[TEST]", embeds[0].title)
         fields = embeds[0].to_dict()["fields"]
-        self.assertTrue(any(field["name"] == "신곡 BEST" for field in fields))
-        self.assertTrue(any(field["name"] == "구곡 BEST" for field in fields))
+        old_best = next(field["value"] for field in fields if field["name"] == "구곡 BEST")
+        self.assertIn("Test Song A", old_best)
+        self.assertIn("Test Song B", old_best)
+        self.assertIn("Test Song C", old_best)
 
     async def test_non_developer_cannot_run_test_embed(self) -> None:
         message = FakeMessage("마싶테스트", 2)

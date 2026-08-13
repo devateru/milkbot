@@ -150,7 +150,8 @@ class MaishiftTrackerTests(unittest.IsolatedAsyncioTestCase):
             field["value"] for field in channel.sent[0]["embeds"][0].to_dict()["fields"]
         )
         self.assertIn("+0.0200%", field_values)
-        self.assertIn("300 → 300 (+0)", field_values)
+        self.assertIn("[300 → 300]", field_values)
+        self.assertIn("Rating +0", field_values)
 
     async def test_same_timestamp_rating_change_notifies(self) -> None:
         before = sample_snapshot()

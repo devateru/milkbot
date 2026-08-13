@@ -15,6 +15,7 @@ def _entry(
     achievement: str,
     grade: str,
     rating: int,
+    difficulty_label: str,
 ) -> MaishiftBestEntry:
     return MaishiftBestEntry(
         stable_key=f"chart:{chart_id}",
@@ -22,7 +23,7 @@ def _entry(
         title=title,
         chart_type="DX",
         difficulty="MASTER",
-        difficulty_label="14.4",
+        difficulty_label=difficulty_label,
         achievement=Decimal(achievement),
         grade=grade,
         rating=rating,
@@ -31,9 +32,8 @@ def _entry(
 
 def build_maishift_test_embeds():
     timestamp = datetime(2026, 8, 13, 8, 42, tzinfo=timezone.utc)
-    aiae = _entry(1, "AiAe", "100.5410", "SSS", 324)
-    old_new_song = _entry(2, "Old New-Song", "100.5000", "SSS+", 310)
-    credits = _entry(3, "Credits", "100.1000", "SSS", 328)
+    test_song_a = _entry(1, "Test Song A", "99.1384", "SS+", 307, "14.1")
+    test_song_b = _entry(2, "Test Song B", "100.5674", "SSS+", 310, "13.8")
     before = MaishiftSnapshot(
         profile_key="milk-test",
         profile_name="milk-test",
@@ -45,32 +45,24 @@ def build_maishift_test_embeds():
         last_update_raw="2026-08-13 17:38",
         last_update_datetime=timestamp,
         game_version="CiRCLE PLUS week #2",
-        new_best=(aiae, old_new_song),
-        old_best=(credits,),
+        new_best=(),
+        old_best=(test_song_a, test_song_b),
         created_at=timestamp,
         updated_at=timestamp,
     )
     after = replace(
         before,
-        total_rating=16126,
+        total_rating=16134,
         play_count=2629,
         last_update_raw="2026-08-13 17:42",
-        new_best=(
-            replace(
-                aiae,
-                achievement=Decimal("100.7234"),
-                grade="SSS+",
-                rating=326,
-            ),
-            _entry(4, "New New-Song", "100.6000", "SSS+", 315),
-        ),
         old_best=(
             replace(
-                credits,
-                achievement=Decimal("100.2000"),
+                test_song_a,
+                achievement=Decimal("100.5384"),
                 grade="SSS+",
-                rating=330,
+                rating=317,
             ),
+            _entry(3, "Test Song C", "100.5384", "SSS+", 317, "14.1"),
         ),
     )
     return build_maishift_update_embeds(diff_snapshots(before, after), after, test=True)

@@ -1,5 +1,6 @@
 import asyncio
 import os
+import subprocess
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -18,6 +19,7 @@ from youtube_live import (
 load_dotenv(".env")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
+BOT_DEVELOPER_ID = os.getenv("BOT_DEVELOPER_ID")
 GAMEPLAZA_YOUTUBE_URL = os.getenv(
     "GAMEPLAZA_YOUTUBE_URL",
     "https://www.youtube.com/@GAMEPLAZA_C/streams",
@@ -25,12 +27,17 @@ GAMEPLAZA_YOUTUBE_URL = os.getenv(
 
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN is not set in .env")
+if not BOT_DEVELOPER_ID:
+    raise RuntimeError("BOT_DEVELOPER_ID is not set in .env")
+
+BOT_DEVELOPER_ID = int(BOT_DEVELOPER_ID)
 
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 _synced = False
+_update_dm_sent = False
 
 
 # ---------------------------------------------------------------------------
@@ -112,9 +119,32 @@ def build_gameplaza_live_embed(
     return embed
 
 
+def get_current_commit() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "log", "-1", "--oneline"],
+            text=True,
+            timeout=3,
+        ).strip()
+    except Exception:
+        return "커밋 정보를 확인하지 못했습니다."
+
+
+async def notify_developer_update() -> None:
+    try:
+        user = client.get_user(BOT_DEVELOPER_ID) or await client.fetch_user(
+            BOT_DEVELOPER_ID
+        )
+        commit = await asyncio.to_thread(get_current_commit)
+        await user.send(f"밀크봇 업데이트 완료!\n`{commit}`")
+    except Exception:
+        # DM 차단, 잘못된 사용자 ID 등의 문제로 봇 자체가 종료되지는 않게 합니다.
+        return
+
+
 @client.event
 async def on_ready() -> None:
-    global _synced
+    global _synced, _update_dm_sent
 
     if not _synced:
         await tree.sync()
@@ -123,6 +153,10 @@ async def on_ready() -> None:
         for guild in client.guilds:
             await tree.sync(guild=guild)
         _synced = True
+
+    if not _update_dm_sent:
+        await notify_developer_update()
+        _update_dm_sent = True
 
     print(f"Logged in as {client.user}")
 

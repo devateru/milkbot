@@ -118,6 +118,10 @@ async def on_ready() -> None:
 
     if not _synced:
         await tree.sync()
+        # 예전에 서버별로 등록했던 명령어(treat 등)는 전역 동기화만으로
+        # 삭제되지 않으므로, 현재 봇이 참여 중인 각 서버 목록도 동기화합니다.
+        for guild in client.guilds:
+            await tree.sync(guild=guild)
         _synced = True
 
     print(f"Logged in as {client.user}")

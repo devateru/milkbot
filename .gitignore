@@ -4,16 +4,6 @@ venv/
 __pycache__/
 *.pyc
 *.pyo
-*.sqlite3
-*.db
-data/
-data/milk_context/
-logs/
-debug/
 *.jpg
 *.jpeg
 *.png
-*.mp4
-*.key
-*.pem
-milkbot_state.json

@@ -1,7 +1,5 @@
 import asyncio
-import logging
 import os
-import subprocess
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -9,27 +7,7 @@ import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
-from dev_commands import handle_developer_dm_command
-from emoji_text import register_emoji_text_command
-from help_commands import build_server_help_embeds
-from milk_agent_client import MilkAgentConfig, MilkAgentMessageHandler
-from messages import get_message
-from maishift.client import MaishiftClient
-from maishift.repository import MaishiftRepository
-from maishift.tracker import MaishiftTracker
-from maishift_commands import register_maishift_commands
-from maishift_dm_commands import handle_maishift_developer_dm
-from random_song_command import (
-    build_chunithm_probability_table_embed,
-    build_maimai_probability_table_embed,
-    register_random_song_command,
-)
-from storage import (
-    get_allowed_guild_ids,
-)
 from thumbnail_board import build_gameplaza_thumbnail_board
-from treat import handle_notreat, register_treat_command
-from utage_command import register_utage_command
 from youtube_live import (
     MachineStatus,
     YouTubeLiveError,
@@ -40,141 +18,50 @@ from youtube_live import (
 load_dotenv(".env")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-BOT_DEVELOPER_ID = os.getenv("BOT_DEVELOPER_ID")
 GAMEPLAZA_YOUTUBE_URL = os.getenv(
     "GAMEPLAZA_YOUTUBE_URL",
     "https://www.youtube.com/@GAMEPLAZA_C/streams",
 )
+
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN is not set in .env")
 
-if not BOT_DEVELOPER_ID:
-    raise RuntimeError("BOT_DEVELOPER_ID is not set in .env")
-
-BOT_DEVELOPER_ID = int(BOT_DEVELOPER_ID)
-
-maishift_logger = logging.getLogger("maishift")
-maishift_logger.setLevel(os.getenv("MAISHIFT_LOG_LEVEL", "INFO").upper())
-if not maishift_logger.handlers:
-    maishift_handler = logging.StreamHandler()
-    maishift_handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    )
-    maishift_logger.addHandler(maishift_handler)
-maishift_logger.propagate = False
 
 intents = discord.Intents.default()
-intents.message_content = True
-intents.messages = True
-intents.dm_messages = True
-
-class MilkBotClient(discord.Client):
-    maishift_tracker: MaishiftTracker | None = None
-    _maishift_closed = False
-
-    async def close(self) -> None:
-        if self.maishift_tracker is not None and not self._maishift_closed:
-            await self.maishift_tracker.stop()
-            self.maishift_tracker.repository.close()
-            self._maishift_closed = True
-        await super().close()
-
-
-client = MilkBotClient(intents=intents)
+client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
-milk_agent_handler = MilkAgentMessageHandler(MilkAgentConfig.from_env())
-maishift_repository = MaishiftRepository(
-    os.getenv("MAISHIFT_DB_PATH", "data/maishift.sqlite3")
-)
-maishift_client = MaishiftClient(
-    timeout=float(os.getenv("MAISHIFT_HTTP_TIMEOUT_SEC", "10")),
-    concurrency=int(os.getenv("MAISHIFT_HTTP_CONCURRENCY", "5")),
-)
-maishift_tracker = MaishiftTracker(
-    client,
-    maishift_repository,
-    maishift_client,
-    interval=float(os.getenv("MAISHIFT_POLL_INTERVAL_SEC", "60")),
-)
-client.maishift_tracker = maishift_tracker
-
 _synced = False
-_update_dm_sent = False
-
-register_random_song_command(tree)
-register_utage_command(tree)
-register_emoji_text_command(tree)
-register_maishift_commands(tree, maishift_repository, maishift_client)
 
 
-@client.event
-async def on_ready():
-    global _synced, _update_dm_sent
-
-    if not _synced:
-        await tree.sync()
-        await sync_all_treat_commands()
-        _synced = True
-
-    if not _update_dm_sent:
-        await notify_developer_update()
-        _update_dm_sent = True
-
-    await maishift_tracker.start()
-
-    print(f"Logged in as {client.user}")
-
-
-def get_current_commit() -> str:
-    try:
-        return subprocess.check_output(
-            ["git", "log", "-1", "--oneline"],
-            text=True,
-            timeout=3,
-        ).strip()
-    except Exception:
-        return "커밋 정보를 확인하지 못했습니다."
+# ---------------------------------------------------------------------------
+# 새 슬래시 명령어를 추가하는 곳
+# ---------------------------------------------------------------------------
+# 1. 아래 예시처럼 @tree.command(...) 데코레이터를 붙인 async 함수를 만드세요.
+# 2. name은 Discord에 표시할 명령어 이름, description은 명령어 설명입니다.
+# 3. 사용자가 입력할 옵션은 함수 매개변수로 추가할 수 있습니다.
+# 4. 최초 응답은 interaction.response.send_message(...)로 전송합니다.
+# 5. 처리 시간이 길면 먼저 interaction.response.defer()를 호출한 뒤
+#    interaction.followup.send(...)로 결과를 전송하세요.
+# 6. 명령어를 추가한 뒤 봇을 재시작하면 on_ready()의 tree.sync()가 Discord에
+#    명령어 목록을 반영합니다. 기존 명령어가 바로 사라지지 않으면 Discord 쪽
+#    동기화에 잠시 시간이 걸릴 수 있습니다.
+#
+# 예시:
+# @tree.command(name="안녕", description="인사를 합니다.")
+# async def hello(interaction: discord.Interaction, 이름: str = "친구") -> None:
+#     await interaction.response.send_message(f"안녕하세요, {이름}님!")
 
 
-async def notify_developer_update() -> None:
-    try:
-        user = client.get_user(BOT_DEVELOPER_ID) or await client.fetch_user(BOT_DEVELOPER_ID)
-        commit = await asyncio.to_thread(get_current_commit)
-        await user.send(f"밀크봇 업데이트 완료!\n`{commit}`")
-    except Exception:
-        return
-
-
-async def sync_treat_command_for_guild(guild_id: int) -> None:
-    guild = discord.Object(id=guild_id)
-    tree.remove_command("treat", type=discord.AppCommandType.chat_input, guild=guild)
-
-    if str(guild_id) in get_allowed_guild_ids():
-        register_treat_command(tree, guild)
-
-    await tree.sync(guild=guild)
-
-
-async def sync_all_treat_commands() -> None:
-    for guild_id_text in get_allowed_guild_ids():
-        if guild_id_text.isdigit():
-            await sync_treat_command_for_guild(int(guild_id_text))
-
-
-@tree.command(name="ping", description=get_message("slash.ping_description"))
-async def ping(interaction: discord.Interaction):
-    await interaction.response.send_message(get_message("slash.ping_response"))
-
-
-@tree.command(name="겜플라이브", description=get_message("slash.gameplaza_description"))
-async def gameplaza_live(interaction: discord.Interaction):
+@tree.command(name="겜플라이브", description="게임플라자 라이브 상태를 확인합니다.")
+async def gameplaza_live(interaction: discord.Interaction) -> None:
     await interaction.response.defer(thinking=True)
 
     try:
         statuses = await asyncio.to_thread(get_gameplaza_machine_statuses)
     except YouTubeLiveError:
         await interaction.followup.send(
-            get_message("slash.gameplaza_error", url=GAMEPLAZA_YOUTUBE_URL)
+            "유튜브 라이브 상태를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.\n"
+            f"{GAMEPLAZA_YOUTUBE_URL}"
         )
         return
 
@@ -192,12 +79,10 @@ async def gameplaza_live(interaction: discord.Interaction):
 
 
 def _format_status(status: MachineStatus) -> str:
-    machine_name = f"{status.number}번기"
-
     if not status.is_live or status.live_url is None:
         return "[---]"
 
-    return f"[{machine_name}]({status.live_url})"
+    return f"[{status.number}번기]({status.live_url})"
 
 
 def build_gameplaza_live_embed(
@@ -213,94 +98,29 @@ def build_gameplaza_live_embed(
             f"라이브: {live_count}/8"
         ),
     )
-    maimai_statuses = statuses[:5]
-    chunithm_statuses = statuses[5:]
-
     embed.add_field(
         name="마이마이 디럭스",
-        value=" / ".join(_format_status(status) for status in maimai_statuses),
+        value=" / ".join(_format_status(status) for status in statuses[:5]),
         inline=False,
     )
     embed.add_field(
         name="츄니즘",
-        value=" / ".join(_format_status(status) for status in chunithm_statuses),
+        value=" / ".join(_format_status(status) for status in statuses[5:]),
         inline=False,
     )
     embed.set_image(url="attachment://gameplaza_live.jpg")
-
     return embed
 
 
-def can_manage_server(interaction: discord.Interaction) -> bool:
-    if interaction.user.id == BOT_DEVELOPER_ID:
-        return True
-
-    permissions = interaction.user.guild_permissions
-    return permissions.administrator or permissions.manage_guild
-
-
-@tree.command(name="help", description=get_message("slash.help_description"))
-async def help_command(interaction: discord.Interaction):
-    if interaction.guild is None:
-        await interaction.response.send_message(get_message("slash.help_guild_only"))
-        return
-
-    await interaction.response.send_message(
-        embeds=build_server_help_embeds(interaction.guild.id),
-        ephemeral=True,
-    )
-
-
 @client.event
-async def on_message(message: discord.Message):
-    if message.author.bot:
-        return
+async def on_ready() -> None:
+    global _synced
 
-    if message.guild is None:
-        enabled_guild_ids_before = set(get_allowed_guild_ids())
-        handled = await handle_maishift_developer_dm(
-            message,
-            BOT_DEVELOPER_ID,
-            maishift_tracker,
-        )
-        if not handled:
-            handled = await handle_developer_dm_command(message, client, BOT_DEVELOPER_ID)
+    if not _synced:
+        await tree.sync()
+        _synced = True
 
-        if handled:
-            enabled_guild_ids_after = set(get_allowed_guild_ids())
-            changed_guild_ids = enabled_guild_ids_before ^ enabled_guild_ids_after
-
-            for guild_id_text in changed_guild_ids:
-                if guild_id_text.isdigit():
-                    await sync_treat_command_for_guild(int(guild_id_text))
-
-        return
-
-    content = message.content.strip()
-    if await milk_agent_handler.handle_message(message):
-        return
-
-    if content == "마이마이 확률표":
-        try:
-            embed = await build_maimai_probability_table_embed(message.author.id)
-        except Exception:
-            await message.channel.send(get_message("random_song.error_fetch_failed"))
-            return
-
-        await message.channel.send(embed=embed)
-        return
-
-    if content == "츄니즘 확률표":
-        try:
-            embed = await build_chunithm_probability_table_embed(message.author.id)
-        except Exception:
-            await message.channel.send(get_message("random_song.error_fetch_failed"))
-            return
-
-        await message.channel.send(embed=embed)
-        return
-
-    await handle_notreat(message)
+    print(f"Logged in as {client.user}")
 
 
 client.run(TOKEN)

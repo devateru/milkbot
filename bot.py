@@ -43,23 +43,67 @@ _update_dm_sent = False
 # ---------------------------------------------------------------------------
 # 새 슬래시 명령어를 추가하는 곳
 # ---------------------------------------------------------------------------
-# 1. 아래 예시처럼 @tree.command(...) 데코레이터를 붙인 async 함수를 만드세요.
-# 2. name은 Discord에 표시할 명령어 이름, description은 명령어 설명입니다.
-# 3. 사용자가 입력할 옵션은 함수 매개변수로 추가할 수 있습니다.
-# 4. 최초 응답은 interaction.response.send_message(...)로 전송합니다.
-# 5. 처리 시간이 길면 먼저 interaction.response.defer()를 호출한 뒤
-#    interaction.followup.send(...)로 결과를 전송하세요.
-# 6. 명령어를 추가한 뒤 봇을 재시작하면 on_ready()의 tree.sync()가 Discord에
-#    명령어 목록을 반영합니다. 기존 명령어가 바로 사라지지 않으면 Discord 쪽
-#    동기화에 잠시 시간이 걸릴 수 있습니다.
+# 명령어는 모두 전역 Application Command로 등록하고,
+# allowed_installs / allowed_contexts로 설치 방식과 실행 위치를 구분합니다.
 #
-# 예시:
-# @tree.command(name="안녕", description="인사를 합니다.")
-# async def hello(interaction: discord.Interaction, 이름: str = "친구") -> None:
-#     await interaction.response.send_message(f"안녕하세요, {이름}님!")
+# [1] 서버 설치(Guild Install) 전용
+#
+# @tree.command(name="서버명령어", description="서버에서만 사용하는 명령어입니다.")
+# @app_commands.allowed_installs(guilds=True, users=False)
+# @app_commands.allowed_contexts(
+#     guilds=True,
+#     dms=False,
+#     private_channels=False,
+# )
+# async def guild_only_command(interaction: discord.Interaction) -> None:
+#     await interaction.response.send_message("서버 전용 명령어")
+#
+#
+# [2] 사용자 설치(User Install) 전용
+# 사용자가 밀크봇을 자기 계정에 설치한 뒤, 봇이 들어가 있지 않은 서버나
+# DM/GDM 등에서도 사용할 개인용 명령어에 사용합니다.
+#
+# @tree.command(name="개인명령어", description="개인 앱으로 사용하는 명령어입니다.")
+# @app_commands.allowed_installs(guilds=False, users=True)
+# @app_commands.allowed_contexts(
+#     guilds=True,
+#     dms=True,
+#     private_channels=True,
+# )
+# async def user_only_command(interaction: discord.Interaction) -> None:
+#     await interaction.response.send_message("사용자 설치 전용 명령어")
+#
+#
+# [3] 서버 설치 + 사용자 설치 모두 허용
+# 조회/계산처럼 서버 권한이 필요 없는 명령어에 적합합니다.
+#
+# @tree.command(name="공용명령어", description="어디서나 사용할 수 있는 명령어입니다.")
+# @app_commands.allowed_installs(guilds=True, users=True)
+# @app_commands.allowed_contexts(
+#     guilds=True,
+#     dms=True,
+#     private_channels=True,
+# )
+# async def shared_command(interaction: discord.Interaction) -> None:
+#     await interaction.response.send_message("공용 명령어")
+#
+#
+# name은 Discord에 표시할 명령어 이름, description은 명령어 설명입니다.
+# 사용자가 입력할 옵션은 함수 매개변수로 추가할 수 있습니다.
+# 처리 시간이 길면 interaction.response.defer() 후
+# interaction.followup.send(...)로 결과를 전송하세요.
+#
+# 명령어를 추가한 뒤 봇을 재시작하면 on_ready()의 tree.sync()가
+# Discord의 전역 Application Command 목록을 동기화합니다.
 
 
 @tree.command(name="겜플라이브", description="게임플라자 라이브 상태를 확인합니다.")
+@app_commands.allowed_installs(guilds=True, users=True)
+@app_commands.allowed_contexts(
+    guilds=True,
+    dms=True,
+    private_channels=True,
+)
 async def gameplaza_live(interaction: discord.Interaction) -> None:
     await interaction.response.defer(thinking=True)
 

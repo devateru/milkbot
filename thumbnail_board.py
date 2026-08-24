@@ -201,6 +201,8 @@ def _make_offline_tile(status: MachineStatus, now: datetime) -> Image.Image:
 
     if last_ended_text:
         lines.append((last_ended_text, meta_font, (210, 210, 210)))
+    elif status.has_recent_completed:
+        lines.append(("최근 방송 종료", meta_font, (210, 210, 210)))
 
     _draw_centered_multiline(
         draw=draw,

@@ -42,6 +42,7 @@ class MachineStatus:
     video_id: str | None
     live_url: str | None
     last_ended_at: datetime | None
+    has_recent_completed: bool
 
 
 _cached_channel_id: str | None = None
@@ -266,11 +267,17 @@ def get_gameplaza_completed_videos(max_results: int = 50) -> list[YouTubeLiveVid
 
 
 def _video_ended_at(video: YouTubeLiveVideo) -> datetime | None:
-    return video.actual_end_time or video.actual_start_time
+    # 실제 종료 시각만 사용
+    return video.actual_end_time
 
 
 def _video_ended_sort_key(video: YouTubeLiveVideo) -> datetime:
-    return _video_ended_at(video) or datetime.min.replace(tzinfo=timezone.utc)
+    # 어떤 완료 방송이 최신인지 비교할 때만 시작 시각 fallback 사용
+    return (
+        video.actual_end_time
+        or video.actual_start_time
+        or datetime.min.replace(tzinfo=timezone.utc)
+    )
 
 
 def get_gameplaza_machine_statuses() -> list[MachineStatus]:
@@ -313,6 +320,7 @@ def get_gameplaza_machine_statuses() -> list[MachineStatus]:
                 video_id=live_video.video_id if live_video else None,
                 live_url=live_video.url if live_video else None,
                 last_ended_at=_video_ended_at(completed_video) if completed_video else None,
+                has_recent_completed=completed_video is not None,
             )
         )
 

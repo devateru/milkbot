@@ -118,6 +118,7 @@ async def foo(interaction: discord.Interaction) -> None:
     discord.ui.Button(
         label="자세히 보기",
         style=discord.ButtonStyle.link,
+        )
     )
 
     view.add_item(
@@ -125,7 +126,7 @@ async def foo(interaction: discord.Interaction) -> None:
             label="다시 뽑기",
             style=discord.ButtonStyle.link,
         )
-)
+    )
 
     await interaction.response.send_message(content="<:remas1:1541805731286884443><:remas2:1541805733325316166><:remas3:1541805735002906664><:remas4:1541805736974352436><:remas5:1541805738308018249>:one::five:", embed=embed, view=view)
 

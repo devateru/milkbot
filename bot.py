@@ -104,19 +104,14 @@ _update_dm_sent = False
     private_channels=True,
 )
 async def foo(interaction: discord.Interaction) -> None:
-    some_url = "https://fallendeity.github.io/discord.py-masterclass/"
     embed = discord.Embed(
         title="**系ぎて** <:dx1:1541721576771162152><:dx2:1541721578595942452><:dx3:1541721580156223508><:dx4:1541721581493952523>",
-        description="츠나기테",
+        description="Re:MASTER 15.0",
         url=r"https://arcade-songs.zetaraku.dev/maimai/song/?id=%E7%B3%BB%E3%81%8E%E3%81%A6",
         color=0xba67f8,
     )
-    embed.add_field(name="작곡가", value="rintaro soma")
-    embed.add_field(name="난이도", value="Re:MASTER 15.0")
-    embed.add_field(name="채보 제작자", value="BEYOND THE MEMORIES", inline=False)
-    embed.add_field(name="수록 버전", value="BUDDiES")
-    embed.add_field(name="BPM", value="88")
     embed.set_image(url="https://dp4p6x0xfi5o9.cloudfront.net/maimai/img/cover/3a914643f53b41ab5b3f0be0bb501b895a52660f8c78f8317a87a7669efc7930.png")
+    embed.set_footer(text="song by **rintaro soma**")
     await interaction.response.send_message(embed=embed)
 
 @tree.command(name="겜플라이브", description="게임플라자 라이브 상태를 확인합니다.")

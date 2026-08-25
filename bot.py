@@ -1,7 +1,7 @@
 import asyncio
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import discord
@@ -106,21 +106,17 @@ _update_dm_sent = False
 async def foo(interaction: discord.Interaction) -> None:
     some_url = "https://fallendeity.github.io/discord.py-masterclass/"
     embed = discord.Embed(
-        title="Title <:dx1:1541721576771162152><:dx2:1541721578595942452><:dx3:1541721580156223508><:dx4:1541721581493952523>",
-        description="Description",
-        url=some_url,
-        color=discord.Color.random(),
-        timestamp=datetime.datetime.utcnow()
+        title="**系ぎて** <:dx1:1541721576771162152><:dx2:1541721578595942452><:dx3:1541721580156223508><:dx4:1541721581493952523>",
+        description="츠나기테",
+        url=r"https://arcade-songs.zetaraku.dev/maimai/song/?id=%E7%B3%BB%E3%81%8E%E3%81%A6",
+        color=0xba67f8,
     )
-    embed.add_field(name="Field name", value="Color sets that <")
-    embed.add_field(name="Field name", value="Color should be an integer or discord.Colour object")
-    embed.add_field(name="Field name", value="You can't set image width/height")
-    embed.add_field(name="Non-inline field name", value="The number of inline fields that can shown on the same row is limited to 3", inline=False)
-    embed.set_author(name="Author", url=some_url,
-                     icon_url="https://cdn.discordapp.com/attachments/1112418314581442650/1124820259384332319/fd0daad3d291ea1d.png")
-    embed.set_image(url="https://cdn.discordapp.com/attachments/1028706344158634084/1124822236801544324/ea14e81636cb2f1c.png")
-    embed.set_thumbnail(url="https://media.discordapp.net/attachments/1112418314581442650/1124819948317986926/db28bfb9bfcdd1f6.png")
-    embed.set_footer(text="Footer", icon_url="https://cdn.discordapp.com/attachments/1112418314581442650/1124820375587528797/dc4b182a87ecee3d.png")
+    embed.add_field(name="작곡가", value="rintaro soma")
+    embed.add_field(name="난이도", value="Re:MASTER 15.0")
+    embed.add_field(name="채보 제작자", value="BEYOND THE MEMORIES", inline=False)
+    embed.add_field(name="수록 버전", value="BUDDiES")
+    embed.add_field(name="BPM", value="88")
+    embed.set_image(url="https://dp4p6x0xfi5o9.cloudfront.net/maimai/img/cover/3a914643f53b41ab5b3f0be0bb501b895a52660f8c78f8317a87a7669efc7930.png")
     await interaction.response.send_message(embed=embed)
 
 @tree.command(name="겜플라이브", description="게임플라자 라이브 상태를 확인합니다.")

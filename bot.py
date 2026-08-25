@@ -96,6 +96,32 @@ _update_dm_sent = False
 # 명령어를 추가한 뒤 봇을 재시작하면 on_ready()의 tree.sync()가
 # Discord의 전역 Application Command 목록을 동기화합니다.
 
+@tree.command(name="임베드테스트", description="곡 선택 임베드 테스트용")
+@app_commands.allowed_installs(guilds=True, users=True)
+@app_commands.allowed_contexts(
+    guilds=True,
+    dms=True,
+    private_channels=True,
+)
+async def foo(interaction: discord.Interaction) -> None:
+    some_url = "https://fallendeity.github.io/discord.py-masterclass/"
+    embed = discord.Embed(
+        title="Title <:dx1:1541721576771162152><:dx2:1541721578595942452><:dx3:1541721580156223508><:dx4:1541721581493952523>",
+        description="Description",
+        url=some_url,
+        color=discord.Color.random(),
+        timestamp=datetime.datetime.utcnow()
+    )
+    embed.add_field(name="Field name", value="Color sets that <")
+    embed.add_field(name="Field name", value="Color should be an integer or discord.Colour object")
+    embed.add_field(name="Field name", value="You can't set image width/height")
+    embed.add_field(name="Non-inline field name", value="The number of inline fields that can shown on the same row is limited to 3", inline=False)
+    embed.set_author(name="Author", url=some_url,
+                     icon_url="https://cdn.discordapp.com/attachments/1112418314581442650/1124820259384332319/fd0daad3d291ea1d.png")
+    embed.set_image(url="https://cdn.discordapp.com/attachments/1028706344158634084/1124822236801544324/ea14e81636cb2f1c.png")
+    embed.set_thumbnail(url="https://media.discordapp.net/attachments/1112418314581442650/1124819948317986926/db28bfb9bfcdd1f6.png")
+    embed.set_footer(text="Footer", icon_url="https://cdn.discordapp.com/attachments/1112418314581442650/1124820375587528797/dc4b182a87ecee3d.png")
+    await interaction.response.send_message(embed=embed)
 
 @tree.command(name="겜플라이브", description="게임플라자 라이브 상태를 확인합니다.")
 @app_commands.allowed_installs(guilds=True, users=True)
@@ -192,8 +218,6 @@ async def on_ready() -> None:
 
     if not _synced:
         await tree.sync()
-        # 예전에 서버별로 등록했던 명령어(treat 등)는 전역 동기화만으로
-        # 삭제되지 않으므로, 현재 봇이 참여 중인 각 서버 목록도 동기화합니다.
         for guild in client.guilds:
             await tree.sync(guild=guild)
         _synced = True

@@ -1,0 +1,92 @@
+{
+	"categories": [
+				{
+					"category": "POPS＆アニメ"
+				},
+				{
+					"category": "niconico＆ボーカロイド"
+				},
+				{
+					"category": "東方Project"
+				},
+				{
+					"category": "ゲーム＆バラエティ"
+				},
+				{
+					"category": "maimai"
+				},
+				{
+					"category": "オンゲキ＆CHUNITHM"
+				},
+				{
+					"category": "宴会場"
+				}
+			],
+			"types": [
+				{
+					"type": "dx",
+					"name": "DX（でらっくす）",
+					"abbr": "DX",
+					"iconUrl": "type-dx.png",
+					"iconHeight": 22
+				},
+				{
+					"type": "std",
+					"name": "STD（スタンダード）",
+					"abbr": "STD",
+					"iconUrl": "type-std.png",
+					"iconHeight": 22
+				},
+				{
+					"type": "utage",
+					"name": "宴（宴会場）",
+					"abbr": "宴"
+				}
+			],
+			"difficulties": [
+				{
+					"difficulty": "basic",
+					"name": "BASIC",
+					"color": "#22bb5b"
+				},
+				{
+					"difficulty": "advanced",
+					"name": "ADVANCED",
+					"color": "#fb9c2d"
+				},
+				{
+					"difficulty": "expert",
+					"name": "EXPERT",
+					"color": "#f64861"
+				},
+				{
+					"difficulty": "master",
+					"name": "MASTER",
+					"color": "#9e45e2"
+				},
+				{
+					"difficulty": "remaster",
+					"name": "Re:MASTER",
+					"color": "#ba67f8"
+				}
+			],
+			"regions": [
+				{
+					"region": "jp",
+					"name": "日本版"
+				},
+				{
+					"region": "intl",
+					"name": "海外版 (International ver.)"
+				},
+				{
+					"region": "usa",
+					"name": "アメリカ海外版 (USA International ver.)"
+				},
+				{
+					"region": "cn",
+					"name": "中国版 (舞萌DX)"
+				}
+			],
+			"comments": "origianlly from https://dp4p6x0xfi5o9.cloudfront.net/maimai/data.json (updateTime: 2026-08-21T01:13:03.602Z)"
+}

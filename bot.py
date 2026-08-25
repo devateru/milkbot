@@ -117,14 +117,16 @@ async def foo(interaction: discord.Interaction) -> None:
     view.add_item(
     discord.ui.Button(
         label="자세히 보기",
-        style=discord.ButtonStyle.link,
+        style=discord.ButtonStyle.secondary,
+        custom_id="detail",
         )
     )
 
     view.add_item(
         discord.ui.Button(
             label="다시 뽑기",
-            style=discord.ButtonStyle.link,
+            style=discord.ButtonStyle.secondary,
+            custom_id="reroll",
         )
     )
 

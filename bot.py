@@ -119,9 +119,15 @@ async def foo(interaction: discord.Interaction) -> None:
         label="자세히 보기",
         style=discord.ButtonStyle.link,
     )
+
+    view.add_item(
+        discord.ui.Button(
+            label="다시 뽑기",
+            style=discord.ButtonStyle.link,
+        )
 )
 
-    await interaction.response.send_message(content="<:remas1:1541805731286884443><:remas2:1541805733325316166><:remas3:1541805735002906664><:remas4:1541805736974352436><:remas5:1541805738308018249>:one::five:", embed=embed, view)
+    await interaction.response.send_message(content="<:remas1:1541805731286884443><:remas2:1541805733325316166><:remas3:1541805735002906664><:remas4:1541805736974352436><:remas5:1541805738308018249>:one::five:", embed=embed, view=view)
 
 @tree.command(name="겜플라이브", description="게임플라자 라이브 상태를 확인합니다.")
 @app_commands.allowed_installs(guilds=True, users=True)

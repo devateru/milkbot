@@ -105,6 +105,7 @@ _update_dm_sent = False
 )
 async def foo(interaction: discord.Interaction) -> None:
     song_title = "False Amber (from the Black Bazaar, Or by A Kervan Trader from the Lands Afar, Or Buried Beneath the Shifting Sands That Lead Everywhere but Nowhere)"
+    song_title = song_title if len(song_title) <= 100 else song_title[:100] + "..."
     song_type = "<:dx1:1541721576771162152><:dx2:1541721578595942452><:dx3:1541721580156223508><:dx4:1541721581493952523>"
     song_artist = "かめりあ"
     song_link = r"https://arcade-songs.zetaraku.dev/maimai/song/?id=False%20Amber%20%28from%20the%20Black%20Bazaar,%20Or%20by%20A%20Kervan%20Trader%20from%20the%20Lands%20Afar,%20Or%20Buried%20Beneath%20the%20Shifting%20Sands%20That%20Lead%20Everywhere%20but%20Nowhere%29"
@@ -115,7 +116,7 @@ async def foo(interaction: discord.Interaction) -> None:
     diff_2p = "EXPERT"
     const_2p = 13.8
     embed = discord.Embed(
-        title=f"**{song_title}** {song_type}",
+        title=f"{song_title} {song_type}",
         description=song_artist,
         url=song_link,
         color=embed_color,

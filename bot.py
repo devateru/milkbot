@@ -111,7 +111,7 @@ async def foo(interaction: discord.Interaction) -> None:
         color=0xba67f8,
     )
     embed.set_thumbnail(url="https://dp4p6x0xfi5o9.cloudfront.net/maimai/img/cover/3a914643f53b41ab5b3f0be0bb501b895a52660f8c78f8317a87a7669efc7930.png")
-    embed.add_field(name="<:remas1:1541815179506094202><:remas2:1541815181292736637><:remas3:1541815184153382952>:one::five:", value="BUDDiES 29/69")
+    embed.add_field(name="Re:MASTER **15**", value=" ")
     view = discord.ui.View()
 
     view.add_item(

@@ -111,7 +111,7 @@ async def foo(interaction: discord.Interaction) -> None:
         color=0xba67f8,
     )
     embed.set_image(url="https://dp4p6x0xfi5o9.cloudfront.net/maimai/img/cover/3a914643f53b41ab5b3f0be0bb501b895a52660f8c78f8317a87a7669efc7930.png")
-    # embed.set_footer(text="song by rintaro soma")
+    embed.set_footer(text="Re:MASTER 15.0")
 
     view = discord.ui.View()
 
@@ -131,7 +131,7 @@ async def foo(interaction: discord.Interaction) -> None:
         )
     )
 
-    await interaction.response.send_message(content="<:remas1:1541815179506094202><:remas2:1541815181292736637><:remas3:1541815184153382952>:one::five:", embed=embed, view=view)
+    await interaction.response.send_message(embed=embed, view=view)
 
 @tree.command(name="겜플라이브", description="게임플라자 라이브 상태를 확인합니다.")
 @app_commands.allowed_installs(guilds=True, users=True)

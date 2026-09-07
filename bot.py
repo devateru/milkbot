@@ -121,7 +121,7 @@ async def foo(interaction: discord.Interaction) -> None:
         color=embed_color,
     )
     embed.set_thumbnail(url=song_cover)
-    embed.add_field(name=f"{diff_1p:<10} **{const_1p:>4}**", value=f"{diff_2p:<10} **{const_2p:>4}**")
+    embed.add_field(name=f"{diff_1p} **{const_1p}**", value=f"{diff_2p} **{const_2p}**")
     view = discord.ui.View()
 
     view.add_item(

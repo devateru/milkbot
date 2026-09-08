@@ -106,12 +106,11 @@ _update_dm_sent = False
 async def foo(interaction: discord.Interaction) -> None:
     song_title = "INTJINTPENTJENTPINFJENFJINFPENFPISTJISFJESTJESFJESTPISTPISFPESFP"
     song_title = song_title if len(song_title) <= 100 else song_title[:100] + "..."
-    song_title = "\u2060".join([song_title, " "])
     song_type = "\u2060".join([
-    "<:dx1:1541721576771162152>",
-    "<:dx2:1541721578595942452>",
-    "<:dx3:1541721580156223508>",
-    "<:dx4:1541721581493952523>",
+    "<:dx1:1546757257478410260>",
+    "<:dx2:1546757259025977384>",
+    "<:dx3:1546757260594778173>",
+    "<:dx4:1546757261999738921>",
 ])
     song_artist = "3markets[]"
     song_link = r"https://arcade-songs.zetaraku.dev/maimai/song/?id=INTJINTPENTJENTPINFJENFJINFPENFPISTJISFJESTJESFJESTPISTPISFPESFP"

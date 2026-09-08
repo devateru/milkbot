@@ -104,10 +104,10 @@ _update_dm_sent = False
     private_channels=True,
 )
 async def foo(interaction: discord.Interaction) -> None:
-    song_title = "False Amber (from the Black Bazaar, Or by A Kervan Trader from the Lands Afar, Or Buried Beneath the Shifting Sands That Lead Everywhere but Nowhere)"
+    song_title = "False Amber"
     song_title = song_title if len(song_title) <= 100 else song_title[:100] + "..."
     song_type = "<:dx1:1541721576771162152><:dx2:1541721578595942452><:dx3:1541721580156223508><:dx4:1541721581493952523>"
-    song_artist = "かめりあ"
+    song_artist = "(from the Black Bazaar, Or by A Kervan Trader from the Lands Afar, Or Buried Beneath the Shifting Sands That Lead Everywhere but Nowhere)\n**かめりあ**"
     song_link = r"https://arcade-songs.zetaraku.dev/maimai/song/?id=False%20Amber%20%28from%20the%20Black%20Bazaar,%20Or%20by%20A%20Kervan%20Trader%20from%20the%20Lands%20Afar,%20Or%20Buried%20Beneath%20the%20Shifting%20Sands%20That%20Lead%20Everywhere%20but%20Nowhere%29"
     song_cover = r"https://dp4p6x0xfi5o9.cloudfront.net/maimai/img/cover/1ead33086c0eff4af90de97530951984666c5224a91c0289857b982dc24a0e49.png"
     embed_color = 0x9e45e2
@@ -122,7 +122,7 @@ async def foo(interaction: discord.Interaction) -> None:
         color=embed_color,
     )
     embed.set_thumbnail(url=song_cover)
-    embed.add_field(name=f"{diff_1p} **{const_1p}**", value=f"{diff_2p} **{const_2p}**")
+    embed.add_field(name=f"{diff_1p} {const_1p}", value=f"{diff_2p} {const_2p}")
     view = discord.ui.View()
 
     view.add_item(

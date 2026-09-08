@@ -106,6 +106,7 @@ _update_dm_sent = False
 async def foo(interaction: discord.Interaction) -> None:
     song_title = "INTJINTPENTJENTPINFJENFJINFPENFPISTJISFJESTJESFJESTPISTPISFPESFP"
     song_title = song_title if len(song_title) <= 100 else song_title[:100] + "..."
+    song_title = "\u2060".join([song_title, " "])
     song_type = "\u2060".join([
     "<:dx1:1541721576771162152>",
     "<:dx2:1541721578595942452>",
@@ -129,7 +130,7 @@ async def foo(interaction: discord.Interaction) -> None:
         chart_2p = ""
     
     embed = discord.Embed(
-        title=f"{song_title} {song_type}",
+        title=f"{song_title}{song_type}",
         description=song_artist,
         url=song_link,
         color=embed_color,

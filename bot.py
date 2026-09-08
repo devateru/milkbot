@@ -104,17 +104,18 @@ _update_dm_sent = False
     private_channels=True,
 )
 async def foo(interaction: discord.Interaction) -> None:
-    song_title = "False Amber"
+    song_title = "INTJINTPENTJENTPINFJENFJINFPENFPISTJISFJESTJESFJESTPISTPISFPESFP"
     song_title = song_title if len(song_title) <= 100 else song_title[:100] + "..."
     song_type = "<:dx1:1541721576771162152><:dx2:1541721578595942452><:dx3:1541721580156223508><:dx4:1541721581493952523>"
-    song_artist = "(from the Black Bazaar, Or by A Kervan Trader from the Lands Afar, Or Buried Beneath the Shifting Sands That Lead Everywhere but Nowhere)\n\nかめりあ"
-    song_link = r"https://arcade-songs.zetaraku.dev/maimai/song/?id=False%20Amber%20%28from%20the%20Black%20Bazaar,%20Or%20by%20A%20Kervan%20Trader%20from%20the%20Lands%20Afar,%20Or%20Buried%20Beneath%20the%20Shifting%20Sands%20That%20Lead%20Everywhere%20but%20Nowhere%29"
-    song_cover = r"https://dp4p6x0xfi5o9.cloudfront.net/maimai/img/cover/1ead33086c0eff4af90de97530951984666c5224a91c0289857b982dc24a0e49.png"
+    song_artist = "3markets[]"
+    song_link = r"https://arcade-songs.zetaraku.dev/maimai/song/?id=INTJINTPENTJENTPINFJENFJINFPENFPISTJISFJESTJESFJESTPISTPISFPESFP"
+    song_cover = r"https://dp4p6x0xfi5o9.cloudfront.net/maimai/img/cover/f13031c7d0390a23079c0b0344a272caa9dbb965d74a4d7edddcc9ae9bfee985.png"
     embed_color = 0x9e45e2
     diff_1p = "MASTER"
-    const_1p = 14.8
-    diff_2p = "EXPERT"
-    const_2p = 13.8
+    const_1p = 13.3
+    diff_2p = False
+    const_2p = -1
+
     if diff_2p:
         chart_1p = f"[1P] {diff_1p} {const_1p}"
         chart_2p = f"[2P] {diff_2p} {const_2p}"

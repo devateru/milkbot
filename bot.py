@@ -129,7 +129,7 @@ async def foo(interaction: discord.Interaction) -> None:
         chart_2p = ""
     
     embed = discord.Embed(
-        title=f"{song_title}{song_type}",
+        title=f"{song_title} {song_type}",
         description=song_artist,
         url=song_link,
         color=embed_color,

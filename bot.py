@@ -249,7 +249,7 @@ FALSE_AMBER_EMOJIS = [
     "<a:falseamber1:1547465948909404271>",
     "<a:falseamber2:1547465951341969428>",
     "<a:falseamber3:1547465954147958784>",
-    "<a:falseamber4:1547465956098580530>",
+    # "<a:falseamber4:1547465956098580530>",
     # "<a:falseamber5:1547465957809586176>",
     # "<a:falseamber6:1547465959600820224>",
 ]

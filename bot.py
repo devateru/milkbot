@@ -234,7 +234,7 @@ STD_EMOJIS = [
     "<:st1:1547465912507048027>",
     "<:st2:1547465914113466438>",
     "<:st3:1547465915581337630>",
-    "<:st3:1547465915581337630>",
+    "<:st4:1547465916982231050>",
 ]
 
 DX_ICON = WORD_JOINER.join(DX_EMOJIS)
@@ -250,8 +250,8 @@ FALSE_AMBER_EMOJIS = [
     "<a:falseamber2:1547465951341969428>",
     "<a:falseamber3:1547465954147958784>",
     "<a:falseamber4:1547465956098580530>",
-    "<a:falseamber5:1547465957809586176>",
-    "<a:falseamber6:1547465959600820224>",
+    # "<a:falseamber5:1547465957809586176>",
+    # "<a:falseamber6:1547465959600820224>",
 ]
 
 # 괄호 시작부터 끝까지 줄바꿈 방지
@@ -438,7 +438,7 @@ def make_random_song_embed(
 
         # Discord Embed field value는
         # 완전한 빈 문자열 대신 zero-width space 사용
-        chart_2p = "\u200b"
+        chart_2p = ""
 
     # -----------------------------------------------------
     # Embed

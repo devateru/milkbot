@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import subprocess
 from datetime import datetime, timedelta, timezone
@@ -18,6 +19,8 @@ from youtube_live import (
     get_gameplaza_machine_statuses,
 )
 from song_search import search_chart, choose_chart
+from song_lookup import load_song_lookup
+from note_scoring import calculate_note_scores, NOTE_WEIGHTS, RANKS
 from song_filter import get_song_filters
 
 load_dotenv(".env")
@@ -42,6 +45,22 @@ client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 _synced = False
 _update_dm_sent = False
+_song_lookup = None
+_song_lookup_task = None
+
+
+async def refresh_song_lookup() -> None:
+    global _song_lookup
+    try:
+        _song_lookup = await asyncio.to_thread(load_song_lookup)
+    except Exception:
+        logging.getLogger(__name__).exception("곡 검색 데이터를 불러오지 못했습니다.")
+
+
+async def keep_song_lookup_updated() -> None:
+    while not client.is_closed():
+        await asyncio.sleep(3600 if _song_lookup is not None else 60)
+        await refresh_song_lookup()
 
 
 # ---------------------------------------------------------------------------
@@ -438,7 +457,7 @@ def make_random_song_embed(
 
         # Discord Embed field value는
         # 완전한 빈 문자열 대신 zero-width space 사용
-        chart_2p = ""
+        chart_2p = "\u200b"
 
     # -----------------------------------------------------
     # Embed
@@ -506,9 +525,94 @@ def get_selection_key(
 # 결과 버튼 View
 # =========================================================
 
-class RandomSongResultView(
-    discord.ui.View
-):
+def make_note_score_embed(chart: dict, sheet: dict, player: str = "") -> discord.Embed:
+    stats = calculate_note_scores(sheet.get("noteCounts"))
+    title = get_display_title(chart['title'])
+    embed = discord.Embed(
+        title=f"{title[:240]} · 노트 배점",
+        description=(f"{player + ' · ' if player else ''}"
+                     f"[{'DX' if sheet['type'] == 'dx' else 'ST' if sheet['type'] == 'std' else sheet['type'].upper()}] "
+                     f"**{format_chart(sheet)}**\n{chart['artist']}"),
+        color=DIFFICULTY_INFO.get(sheet['difficulty'], {'color': 0x9E45E2})['color'],
+        url=SONG_PAGE_BASE_URL + quote(chart['title'], safe=""),
+    )
+    embed.set_thumbnail(url=COVER_BASE_URL + chart['imageName'])
+    counts = stats['counts']
+    embed.add_field(name=f"노트 수 · 총 {stats['total']:,}개",
+                    value=' · '.join(f"**{k.upper()}** {counts[k]:,}" for k in NOTE_WEIGHTS), inline=False)
+    lines = []
+    for k, weight in NOTE_WEIGHTS.items():
+        if k == 'break' and not counts[k]:
+            lines.append('**BREAK** 0개 · 해당 없음')
+            continue
+        base = f"{weight} TAP"
+        if k == 'break':
+            base += f" + 보너스 {float(stats['break_bonus']):.5f}%"
+        line = f"**{k.upper()}** {base} = **{float(stats['per_note'][k]):.5f}%**"
+        if k == 'break':
+            equivalent = stats['per_note'][k] / stats['per_note']['tap']
+            line += f" (총 {float(equivalent):.2f} TAP 상당)"
+        lines.append(line)
+    embed.add_field(name=f"1개당 배점 · 만점 {float(stats['maximum']):.4f}%",
+                    value='\n'.join(lines), inline=False)
+    ranks = []
+    for rank, threshold in RANKS.items():
+        limit = stats['miss_limits'][rank]
+        allowance = f"TAP **{limit}개 이하 MISS**" if limit is not None else '도달 불가'
+        ranks.append(f"**{rank}** {float(threshold):g}% · {allowance}")
+    embed.add_field(name="랭크별 TAP MISS 허용 수",
+                    value='\n'.join(ranks) + '\n나머지 노트는 최고 판정, BREAK 보너스 만점 기준입니다.', inline=False)
+    normal = []
+    for k, losses in stats['losses'].items():
+        if counts[k]:
+            normal.append(f"{k.upper()}: GREAT −{float(losses['great']):.5f}% · "
+                          f"GOOD −{float(losses['good']):.5f}% · MISS −{float(losses['miss']):.5f}%")
+    embed.add_field(name="일반 노트 · 판정 1개당 감소율",
+                    value=('PERFECT/CRITICAL PERFECT: 감점 없음\n'
+                           'GREAT: 80% 획득 / 20% 감점 · GOOD: 50% 획득 / 50% 감점\n'
+                           'MISS: 0% 획득 / 100% 감점\n' + '\n'.join(normal)), inline=False)
+    if counts['break']:
+        labels = {'critical_perfect': 'CRITICAL PERFECT', 'perfect_2550': 'PERFECT (2550)',
+                  'perfect_2500': 'PERFECT (2500)', 'great_2000': 'GREAT (2000)',
+                  'great_1500': 'GREAT (1500)', 'great_1250': 'GREAT (1250)', 'good': 'GOOD', 'miss': 'MISS'}
+        embed.add_field(name="BREAK · 판정 1개당 감소율 (보너스 포함)",
+                        value='\n'.join(f"{labels[k]}: −{float(loss):.5f}%"
+                                        for k, loss in stats['break_losses'].items()), inline=False)
+    embed.set_footer(text="현재 maimai DX 달성률 기준(ST 채보 포함) · %는 달성률 퍼센트포인트 · 표시값만 반올림")
+    return embed
+
+
+class SongResultView(discord.ui.View):
+    def __init__(self, *, user_id: int, current_chart: dict,
+                 current_p1_sheet: dict, current_p2_sheet: dict | None = None):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.current_chart = current_chart
+        self.current_p1_sheet = current_p1_sheet
+        self.current_p2_sheet = current_p2_sheet
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("명령어를 실행한 사람만 사용할 수 있습니다.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="노트 배점", style=discord.ButtonStyle.secondary)
+    async def note_scores(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embeds, errors = [], []
+        sheets = [("1P" if self.current_p2_sheet is not None else "", self.current_p1_sheet)]
+        if self.current_p2_sheet is not None:
+            sheets.append(("2P", self.current_p2_sheet))
+        for player, sheet in sheets:
+            try:
+                embeds.append(make_note_score_embed(self.current_chart, sheet, player))
+            except ValueError as error:
+                errors.append(f"{player + ': ' if player else ''}{error}")
+        await interaction.response.send_message(content='\n'.join(errors) or None,
+                                                embeds=embeds, ephemeral=True)
+
+
+class RandomSongResultView(SongResultView):
 
     def __init__(
         self,
@@ -520,9 +624,8 @@ class RandomSongResultView(
         current_p2_sheet: dict | None,
     ):
 
-        super().__init__(
-            timeout=300
-        )
+        super().__init__(user_id=user_id, current_chart=current_chart,
+                         current_p1_sheet=current_p1_sheet, current_p2_sheet=current_p2_sheet)
 
         self.user_id = user_id
 
@@ -629,6 +732,9 @@ class RandomSongResultView(
             )
 
         self.current_key = new_key
+        self.current_chart = chart
+        self.current_p1_sheet = p1_sheet
+        self.current_p2_sheet = p2_sheet
 
         embed = make_random_song_embed(
             chart,
@@ -844,6 +950,44 @@ async def randsong(
 
 
 
+@tree.command(name="곡검색", description="곡명이나 대체어로 마이마이 곡을 검색합니다.")
+@app_commands.allowed_installs(guilds=True, users=True)
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+@app_commands.rename(song="곡", difficulty="난이도")
+@app_commands.describe(song="곡명/대체어를 입력하고 DX 또는 ST 채보를 선택하세요.",
+                       difficulty="기본 MASTER, Re:MASTER가 없으면 MASTER로 표시합니다.")
+@app_commands.choices(difficulty=[
+    app_commands.Choice(name="BASIC", value="basic"),
+    app_commands.Choice(name="ADVANCED", value="advanced"),
+    app_commands.Choice(name="EXPERT", value="expert"),
+    app_commands.Choice(name="MASTER", value="master"),
+    app_commands.Choice(name="Re:MASTER", value="remaster"),
+])
+async def find_song(interaction: discord.Interaction, song: str, difficulty: str = "master") -> None:
+    index = _song_lookup
+    if index is None:
+        await interaction.response.send_message("곡 검색 데이터를 준비 중입니다. 잠시 후 다시 시도해주세요.", ephemeral=True)
+        return
+    try:
+        chart, sheet, fallback = index.select(song, difficulty)
+    except ValueError as error:
+        await interaction.response.send_message(str(error), ephemeral=True)
+        return
+    embed = make_random_song_embed(chart, sheet, None)
+    if fallback:
+        embed.set_footer(text="선택한 채보에 Re:MASTER가 없어 MASTER를 표시합니다.")
+    view = SongResultView(user_id=interaction.user.id, current_chart=chart, current_p1_sheet=sheet)
+    await interaction.response.send_message(embed=embed, view=view)
+
+
+@find_song.autocomplete("song")
+async def autocomplete_song(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    if _song_lookup is None:
+        return []
+    return [app_commands.Choice(name=option['name'], value=option['value'])
+            for option in _song_lookup.autocomplete(current)]
+
+
 @tree.command(name="겜플라이브", description="게임플라자 라이브 상태를 확인합니다.")
 @app_commands.allowed_installs(guilds=True, users=True)
 @app_commands.allowed_contexts(
@@ -935,7 +1079,11 @@ async def notify_developer_update() -> None:
 
 @client.event
 async def on_ready() -> None:
-    global _synced, _update_dm_sent
+    global _synced, _update_dm_sent, _song_lookup_task
+
+    if _song_lookup_task is None or _song_lookup_task.done():
+        await refresh_song_lookup()
+        _song_lookup_task = asyncio.create_task(keep_song_lookup_updated())
 
     if not _synced:
         await tree.sync()

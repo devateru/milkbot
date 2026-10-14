@@ -1,5 +1,6 @@
 import requests
 import random
+from song_presentation import enrich_song_catalog
 # import time
 # import json
 
@@ -49,6 +50,7 @@ def search_chart(
     )
 
     songs, _ = get_data()
+    songs = enrich_song_catalog(songs, region)
     results = []
 
     for song in songs:
@@ -59,6 +61,7 @@ def search_chart(
             sheet_results = []
 
             for sheet in song["sheets"]:
+                sheet = {**sheet, **sheet.get('regionOverrides', {}).get(region, {})}
                 if (
                     (not type_ or sheet["type"] in type_)
                     and (not difficulty or sheet["difficulty"] in difficulty)
@@ -76,6 +79,7 @@ def search_chart(
                         p2_sheet_results = []
 
                         for p2_sheet in song["sheets"]:
+                            p2_sheet = {**p2_sheet, **p2_sheet.get('regionOverrides', {}).get(region, {})}
                             if (
                                 (p2_sheet["type"] == sheet["type"])
                                 and (
@@ -113,7 +117,9 @@ def search_chart(
                     "version": song["version"],
                     "isLocked": song["isLocked"],
                     "comment": song["comment"],
-                    "sheets": sheet_results
+                    "sheets": sheet_results,
+                    "all_sheets": song['all_sheets'],
+                    "chart_region": region,
                 }
 
                 results.append(summary)

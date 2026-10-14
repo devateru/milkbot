@@ -9,6 +9,7 @@ import re
 import unicodedata
 
 from song_search import get_data
+from song_presentation import enrich_song_catalog
 
 
 ALIAS_PATH = Path(__file__).resolve().with_name('song_aliases.json')
@@ -48,6 +49,7 @@ def match_score(query, term):
 
 class SongLookup:
     def __init__(self, songs, aliases, region='intl'):
+        songs = enrich_song_catalog(songs, region)
         self.songs = songs
         self.alias_path = None
         self.alias_stamp = None

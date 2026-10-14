@@ -21,6 +21,7 @@ from youtube_live import (
 from song_search import search_chart, choose_chart
 from song_lookup import load_song_lookup
 from note_scoring import calculate_note_scores, NOTE_WEIGHTS, RANKS
+from song_presentation import format_song_constants
 from song_filter import get_song_filters
 
 load_dotenv(".env")
@@ -354,7 +355,7 @@ def format_chart(sheet: dict) -> str:
 # 임베드 생성
 # =========================================================
 
-def make_random_song_embed(
+def make_song_embed(
     chart: dict,
     p1_sheet: dict,
     p2_sheet: dict | None,
@@ -479,7 +480,8 @@ def make_random_song_embed(
 
     embed.add_field(
         name=chart_1p,
-        value=chart_2p,
+        value='\n'.join(part for part in [chart_2p if p2_sheet is not None else '',
+                                         format_song_constants(chart, p1_sheet['type'])] if part) or '\u200b',
         inline=False,
     )
 
@@ -540,45 +542,32 @@ def make_note_score_embed(chart: dict, sheet: dict, player: str = "") -> discord
     counts = stats['counts']
     embed.add_field(name=f"노트 수 · 총 {stats['total']:,}개",
                     value=' · '.join(f"**{k.upper()}** {counts[k]:,}" for k in NOTE_WEIGHTS), inline=False)
-    lines = []
-    for k, weight in NOTE_WEIGHTS.items():
-        if k == 'break' and not counts[k]:
-            lines.append('**BREAK** 0개 · 해당 없음')
-            continue
-        base = f"{weight} TAP"
-        if k == 'break':
-            base += f" + 보너스 {float(stats['break_bonus']):.5f}%"
-        line = f"**{k.upper()}** {base} = **{float(stats['per_note'][k]):.5f}%**"
-        if k == 'break':
-            equivalent = stats['per_note'][k] / stats['per_note']['tap']
-            line += f" (총 {float(equivalent):.2f} TAP 상당)"
-        lines.append(line)
-    embed.add_field(name=f"1개당 배점 · 만점 {float(stats['maximum']):.4f}%",
+    tap_score = stats['per_note']['tap']
+    lines = [f"TAP / TOUCH = 1 TAP = {float(tap_score):.4f}%",
+             f"HOLD = 2 TAP = {float(stats['per_note']['hold']):.4f}%",
+             f"SLIDE = 3 TAP = {float(stats['per_note']['slide']):.4f}%"]
+    if counts['break']:
+        extra_taps = stats['break_bonus'] / tap_score
+        lines.append(f"BREAK = 5 + **{float(extra_taps):.2f}** TAP = **{float(stats['per_note']['break']):.4f}%**")
+    else:
+        lines.append('BREAK = 해당 없음')
+    embed.add_field(name="1개당 배점",
                     value='\n'.join(lines), inline=False)
     ranks = []
     for rank, threshold in RANKS.items():
         limit = stats['miss_limits'][rank]
-        allowance = f"TAP **{limit}개 이하 MISS**" if limit is not None else '도달 불가'
+        allowance = f"TAP **{limit}개 이하**" if limit is not None else '도달 불가'
         ranks.append(f"**{rank}** {float(threshold):g}% · {allowance}")
     embed.add_field(name="랭크별 TAP MISS 허용 수",
-                    value='\n'.join(ranks) + '\n나머지 노트는 최고 판정, BREAK 보너스 만점 기준입니다.', inline=False)
-    normal = []
-    for k, losses in stats['losses'].items():
-        if counts[k]:
-            normal.append(f"{k.upper()}: GREAT −{float(losses['great']):.5f}% · "
-                          f"GOOD −{float(losses['good']):.5f}% · MISS −{float(losses['miss']):.5f}%")
-    embed.add_field(name="일반 노트 · 판정 1개당 감소율",
-                    value=('PERFECT/CRITICAL PERFECT: 감점 없음\n'
-                           'GREAT: 80% 획득 / 20% 감점 · GOOD: 50% 획득 / 50% 감점\n'
-                           'MISS: 0% 획득 / 100% 감점\n' + '\n'.join(normal)), inline=False)
+                    value='\n'.join(ranks), inline=False)
     if counts['break']:
-        labels = {'critical_perfect': 'CRITICAL PERFECT', 'perfect_2550': 'PERFECT (2550)',
-                  'perfect_2500': 'PERFECT (2500)', 'great_2000': 'GREAT (2000)',
-                  'great_1500': 'GREAT (1500)', 'great_1250': 'GREAT (1250)', 'good': 'GOOD', 'miss': 'MISS'}
+        labels = {'critical_perfect': 'CRITICAL PERFECT', 'perfect_2550': 'PERFECT (±2F)',
+                  'perfect_2500': 'PERFECT (±3F)', 'great_2000': 'GREAT (±4F)',
+                  'great_1500': 'GREAT (±5F)', 'great_1250': 'GREAT (±6F)', 'good': 'GOOD (±9F)', 'miss': 'MISS'}
         embed.add_field(name="BREAK · 판정 1개당 감소율 (보너스 포함)",
-                        value='\n'.join(f"{labels[k]}: −{float(loss):.5f}%"
+                        value='\n'.join(f"{labels[k]}: −{float(loss):.4f}% = {float(loss / tap_score):.1f} TAP"
                                         for k, loss in stats['break_losses'].items()), inline=False)
-    embed.set_footer(text="현재 maimai DX 달성률 기준(ST 채보 포함) · %는 달성률 퍼센트포인트 · 표시값만 반올림")
+    embed.set_footer(text="TAP/TOUCH: GREAT = −0.2 TAP, GOOD = −0.5 TAP / 1F ≈ 16.67ms (BREAK TAP 기준)")
     return embed
 
 
@@ -642,47 +631,6 @@ class RandomSongResultView(SongResultView):
 
 
     # -----------------------------------------------------
-    # 명령어 실행자만 버튼 사용 가능
-    # -----------------------------------------------------
-
-    async def interaction_check(
-        self,
-        interaction: discord.Interaction
-    ) -> bool:
-
-        if interaction.user.id != self.user_id:
-
-            await interaction.response.send_message(
-                "랜덤선곡을 실행한 사람만 사용할 수 있습니다.",
-                ephemeral=True,
-            )
-
-            return False
-
-        return True
-
-
-    # -----------------------------------------------------
-    # 자세히 보기
-    # -----------------------------------------------------
-
-    @discord.ui.button(
-        label="자세히 보기 [WIP]",
-        style=discord.ButtonStyle.secondary,
-    )
-    async def detail(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
-
-        await interaction.response.send_message(
-            "자세히 보기 기능은 아직 준비 중입니다.",
-            ephemeral=True,
-        )
-
-
-    # -----------------------------------------------------
     # 다시 뽑기
     # -----------------------------------------------------
 
@@ -736,7 +684,7 @@ class RandomSongResultView(SongResultView):
         self.current_p1_sheet = p1_sheet
         self.current_p2_sheet = p2_sheet
 
-        embed = make_random_song_embed(
+        embed = make_song_embed(
             chart,
             p1_sheet,
             p2_sheet,
@@ -858,7 +806,7 @@ async def randsong(
     # 5. 곡 임베드 생성
     # =====================================================
 
-    embed = make_random_song_embed(
+    embed = make_song_embed(
         chart,
         p1_sheet,
         p2_sheet,
@@ -973,7 +921,7 @@ async def find_song(interaction: discord.Interaction, song: str, difficulty: str
     except ValueError as error:
         await interaction.response.send_message(str(error), ephemeral=True)
         return
-    embed = make_random_song_embed(chart, sheet, None)
+    embed = make_song_embed(chart, sheet, None)
     if fallback:
         embed.set_footer(text="선택한 채보에 Re:MASTER가 없어 MASTER를 표시합니다.")
     view = SongResultView(user_id=interaction.user.id, current_chart=chart, current_p1_sheet=sheet)

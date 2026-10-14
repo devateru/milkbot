@@ -56,7 +56,7 @@ class SongCommandTests(unittest.IsolatedAsyncioTestCase):
         embed = payload['embeds'][0]
         self.assertIn('[DX]', embed.description)
         self.assertIn('MASTER 13.2', embed.description)
-        self.assertIn('5개 이하 MISS', embed.fields[2].value)
+        self.assertIn('5개 이하', embed.fields[2].value)
         self.assertEqual(embed.thumbnail.url, self.namespace['COVER_BASE_URL'] + 'cover.png')
         self.assertLessEqual(len(embed), 6000)
         sheet.pop('noteCounts')
@@ -74,10 +74,11 @@ class SongCommandTests(unittest.IsolatedAsyncioTestCase):
         view = self.namespace['RandomSongResultView'](user_id=1, results=[second],
                     current_chart=first, current_p1_sheet=sheet, current_p2_sheet=None)
         self.assertIn('노트 배점', [b.label for b in view.children])
+        self.assertEqual([b.label for b in view.children], ['노트 배점', '다시 뽑기'])
         interaction = Mock()
         interaction.response.edit_message = AsyncMock()
         interaction.response.send_message = AsyncMock()
-        with patch.dict(self.namespace['make_random_song_embed'].__globals__,
+        with patch.dict(self.namespace['make_song_embed'].__globals__,
                         {'choose_chart': Mock(return_value=(second, sheet, p2))}):
             await view.reroll.callback(interaction)
         await view.note_scores.callback(interaction)
@@ -87,6 +88,32 @@ class SongCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('1P', embeds[0].description)
         self.assertIn('2P', embeds[1].description)
         self.assertIn('EXPERT', embeds[1].description)
+
+    def test_note_score_layout_is_compact_and_converts_break_losses_to_taps(self):
+        chart = {'title': 'Song', 'artist': 'x0o0x_', 'imageName': 'cover.png'}
+        sheet = {'type': 'dx', 'difficulty': 'master', 'internalLevelValue': 12.8,
+                 'noteCounts': {'tap': 382, 'hold': 38, 'slide': 135, 'touch': 44, 'break': 6, 'total': 605}}
+        embed = self.namespace['make_note_score_embed'](chart, sheet)
+        self.assertEqual(len(embed.fields), 4)
+        self.assertEqual(embed.fields[1].name, '1개당 배점')
+        self.assertIn('TAP / TOUCH = 1 TAP = 0.1067%', embed.fields[1].value)
+        self.assertIn('BREAK = 5 + **1.56** TAP = **0.7003%**', embed.fields[1].value)
+        self.assertNotIn('MISS', embed.fields[2].value)
+        self.assertIn('PERFECT (±2F): −0.0417% = 0.4 TAP', embed.fields[3].value)
+        self.assertIn('PERFECT (±3F): −0.0833%', embed.fields[3].value)
+        self.assertIn('GREAT = −0.2 TAP', embed.footer.text)
+
+    def test_shared_song_embed_keeps_design_and_shows_constants_below_selection(self):
+        chart = {'title': 'Song', 'artist': 'A', 'imageName': 'cover.png',
+                 'sheets': [{'type': 'dx', 'difficulty': 'basic', 'internalLevelValue': 5.0},
+                            {'type': 'dx', 'difficulty': 'master', 'internalLevelValue': 14.6},
+                            {'type': 'std', 'difficulty': 'master', 'internalLevelValue': 14.3}]}
+        selected = chart['sheets'][1]
+        embed = self.namespace['make_song_embed'](chart, selected, None)
+        self.assertEqual(embed.description, 'A')
+        self.assertEqual(embed.fields[0].name, 'MASTER 14.6')
+        self.assertEqual(embed.fields[0].value, '[DX] 5.0 / 14.6\n[ST] 14.3')
+        self.assertEqual(embed.thumbnail.url, self.namespace['COVER_BASE_URL'] + 'cover.png')
 
     async def test_manual_text_is_rejected_instead_of_random_selection(self):
         interaction = Mock()

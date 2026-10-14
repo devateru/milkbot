@@ -22,6 +22,8 @@ SSS+ 100.5%, SSS 100%, SS+ 99.5%, SS 99%, S+ 98%, S 97%를 기준으로 `floor((
 
 일반 노트의 GREAT는 배점의 80%, GOOD는 50%, MISS는 0%를 획득합니다. BREAK는 GREAT 세부 판정에 따라 기본 배점의 80%/60%/50%, GOOD는 40%를 획득합니다. BREAK 보너스 획득 비율은 CRITICAL PERFECT 100%, PERFECT 75% 또는 50%, GREAT 40%, GOOD 30%, MISS 0%입니다.
 
-내부 계산은 분수로 수행해 랭크 경계에서 반올림 때문에 허용 수가 달라지는 것을 방지합니다. 화면의 감소율은 달성률 퍼센트포인트이며 소수점 다섯 자리로 표시합니다.
+내부 계산은 분수로 수행해 랭크 경계에서 반올림 때문에 허용 수가 달라지는 것을 방지합니다. 화면의 감소율은 달성률 퍼센트포인트이며 소수점 네 자리로 표시합니다. TAP/TOUCH는 한 줄로 합치고 BREAK 보너스는 추가 TAP 단위로 환산해 강조합니다. BREAK 감점률 옆의 TAP 환산값은 소수점 한 자리입니다. 일반 TAP/TOUCH의 GREAT/GOOD 감점 요약은 임베드 하단에 표시합니다.
+
+BREAK TAP 판정의 PERFECT 세부 구간은 ±2F / ±3F, GREAT는 ±4F / ±5F / ±6F, GOOD는 ±9F 경계로 표시합니다. 각 값은 해당 판정의 최대 오차이며 중앙의 더 높은 판정 구간을 포함한다는 뜻은 아닙니다. 1F는 60fps 기준 약 16.67ms입니다. BREAK SLIDE 등 다른 노트 형상에 이 시간 구간을 그대로 적용하지 않습니다. [판정 분석 도구 개발자의 구간 설명](https://github.com/Minepig/MaiMuriDX/blob/master/docs/%E5%BC%80%E5%8F%91%E7%AC%94%E8%AE%B0.md#tap-%E7%9A%84%E5%88%A4%E5%AE%9A)을 참고했습니다.
 
 기준 자료: [SEGA 달성률 조정 공식 안내](https://maimai.sega.jp/news/2019-08-07/), [배점 계산 도구 작성자의 공식 설명](https://spiritsunite.github.io/maimai-score-details/).

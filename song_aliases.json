@@ -220,7 +220,9 @@
   },
   {
     "title": "Altale",
-    "aliases": []
+    "aliases": [
+      "알테일"
+    ]
   },
   {
     "title": "Amereistr",
@@ -262,7 +264,10 @@
   },
   {
     "title": "B.B.K.K.B.K.K.",
-    "aliases": []
+    "aliases": [
+      "BBKKBKK",
+      "베이스킥"
+    ]
   },
   {
     "title": "B.M.S.",
@@ -285,7 +290,9 @@
   {
     "title": "BATTLE NO.1",
     "aliases": [
-      "BATTLE NO.1/리듬 게임 수록"
+      "배넘원",
+      "배틀 넘버원",
+      "아머아머"
     ]
   },
   {
@@ -466,7 +473,12 @@
   },
   {
     "title": "Brain Power",
-    "aliases": []
+    "aliases": [
+      "뇌힘",
+      "브레인 파워",
+      "브레인파워",
+      "브파"
+    ]
   },
   {
     "title": "Brand-new Japanesque",
@@ -531,7 +543,9 @@
   },
   {
     "title": "CO5M1C R4ILR0AD",
-    "aliases": []
+    "aliases": [
+      "COSMIC RAILROAD"
+    ]
   },
   {
     "title": "CYBER Sparks",
@@ -604,7 +618,9 @@
   },
   {
     "title": "Chronomia",
-    "aliases": []
+    "aliases": [
+      "크로노미아"
+    ]
   },
   {
     "title": "Chu Chu",
@@ -752,7 +768,9 @@
   },
   {
     "title": "DATAERR0R",
-    "aliases": []
+    "aliases": [
+      "DataErr0r"
+    ]
   },
   {
     "title": "DETARAME ROCK&ROLL THEORY",
@@ -839,7 +857,9 @@
   },
   {
     "title": "Destr0yer",
-    "aliases": []
+    "aliases": [
+      "디스트로이어(삭제)"
+    ]
   },
   {
     "title": "Dive into The Sky ～initialized～",
@@ -914,7 +934,10 @@
   },
   {
     "title": "ENERGY SYNERGY MATRIX",
-    "aliases": []
+    "aliases": [
+      "ESM(BMS)",
+      "에너지 시너지 매트릭스"
+    ]
   },
   {
     "title": "ENJOY POLIS",
@@ -1059,7 +1082,13 @@
   },
   {
     "title": "FREEDOM DiVE (tpz Overcute Remix)",
-    "aliases": []
+    "aliases": [
+      "FDFD",
+      "FREEDOM DiVE",
+      "FREEDOM DiVE↓",
+      "프다",
+      "프리덤 다이브"
+    ]
   },
   {
     "title": "FUJIN Rumble",
@@ -1242,7 +1271,10 @@
   },
   {
     "title": "God knows...",
-    "aliases": []
+    "aliases": [
+      "God knows",
+      "God knows…"
+    ]
   },
   {
     "title": "Good Bye, Mr. Jack",
@@ -1365,11 +1397,28 @@
   },
   {
     "title": "Help me, ERINNNNNN!!",
-    "aliases": []
+    "aliases": [
+      "구해줘, 에린!!",
+      "다스케테 에링",
+      "도와줘 에링",
+      "에링에링",
+      "에이린교",
+      "타스케테, 에린!!",
+      "헬프미 에린"
+    ]
   },
   {
     "title": "Help me, ERINNNNNN!!（Band ver.）",
-    "aliases": []
+    "aliases": [
+      "Help me, ERINNNNNN!!",
+      "구해줘, 에린!!",
+      "다스케테 에링",
+      "도와줘 에링",
+      "에링에링",
+      "에이린교",
+      "타스케테, 에린!!",
+      "헬프미 에린"
+    ]
   },
   {
     "title": "Help me, あーりん！",
@@ -1561,7 +1610,11 @@
   },
   {
     "title": "Jack-the-Ripper◆",
-    "aliases": []
+    "aliases": [
+      "Jack the Ripper(BMS)",
+      "Jack the Ripper◆",
+      "잭 더 리퍼(BMS)"
+    ]
   },
   {
     "title": "Jimang Shot",
@@ -1612,7 +1665,10 @@
   },
   {
     "title": "KING",
-    "aliases": []
+    "aliases": [
+      "KING(VOCALOID 오리지널 곡)",
+      "킹(VOCALOID 오리지널 곡)"
+    ]
   },
   {
     "title": "KING is BACK!!",
@@ -1822,7 +1878,11 @@
   },
   {
     "title": "Lionheart",
-    "aliases": []
+    "aliases": [
+      "라이언 하트",
+      "라이언하트",
+      "라이온하트"
+    ]
   },
   {
     "title": "Little \"Sister\" Bitch",
@@ -1870,7 +1930,9 @@
   },
   {
     "title": "Love you",
-    "aliases": []
+    "aliases": [
+      "Love You"
+    ]
   },
   {
     "title": "Lover's Trick",
@@ -2353,7 +2415,13 @@
   },
   {
     "title": "PUPA",
-    "aliases": []
+    "aliases": [
+      "PUP∀",
+      "그 나비",
+      "나비는 사람을 찢어",
+      "사람 찢는 나비",
+      "해로운 나비"
+    ]
   },
   {
     "title": "Panopticon",
@@ -2564,7 +2632,9 @@
   },
   {
     "title": "Random",
-    "aliases": []
+    "aliases": [
+      "Random(BMS)"
+    ]
   },
   {
     "title": "Raven Emperor",
@@ -2618,7 +2688,10 @@
   },
   {
     "title": "Re：End of a Dream",
-    "aliases": []
+    "aliases": [
+      "Re : End of a Dream",
+      "리엔드"
+    ]
   },
   {
     "title": "Riders Of The Light",
@@ -3628,7 +3701,11 @@
   },
   {
     "title": "conflict",
-    "aliases": []
+    "aliases": [
+      "리국가",
+      "쥬오르히",
+      "콘플릭트"
+    ]
   },
   {
     "title": "connecting with you",
@@ -3749,7 +3826,11 @@
   },
   {
     "title": "only my railgun",
-    "aliases": []
+    "aliases": [
+      "late in autumn",
+      "온리 마이 레일건",
+      "온마레"
+    ]
   },
   {
     "title": "otorii INNOVATED -[i]3-",
@@ -3987,7 +4068,13 @@
   },
   {
     "title": "いーあるふぁんくらぶ",
-    "aliases": []
+    "aliases": [
+      "이아루 팬클럽",
+      "이얼 판클럽",
+      "이얼 팬클럽",
+      "하나 둘 팬클럽",
+      "하나둘 팬클럽"
+    ]
   },
   {
     "title": "うい麦畑でつかまえて",
@@ -4007,7 +4094,14 @@
   },
   {
     "title": "うっせぇわ",
-    "aliases": []
+    "aliases": [
+      "Usseewa",
+      "시끄러워",
+      "우루사이",
+      "웃세에와",
+      "웃세와",
+      "읏세와"
+    ]
   },
   {
     "title": "うまぴょい伝説",
@@ -4054,7 +4148,10 @@
   },
   {
     "title": "おちゃめ機能",
-    "aliases": []
+    "aliases": [
+      "Ochame Kinou",
+      "장난기 기능"
+    ]
   },
   {
     "title": "おても☆Yan",
@@ -4174,7 +4271,9 @@
   },
   {
     "title": "からくりピエロ",
-    "aliases": []
+    "aliases": [
+      "꼭두각시 피에로"
+    ]
   },
   {
     "title": "きたさいたま2000",
@@ -4193,11 +4292,21 @@
   },
   {
     "title": "きゅうくらりん",
-    "aliases": []
+    "aliases": [
+      "두근 아찔",
+      "두근 어질",
+      "큐우쿠라린",
+      "큐쿠라린"
+    ]
   },
   {
     "title": "きゅびずむ",
-    "aliases": []
+    "aliases": [
+      "Cubism",
+      "きゅびびびびずむ",
+      "큐비비비비즘",
+      "큐비즘(니디 걸 오버도즈)"
+    ]
   },
   {
     "title": "きゅびびびびずむ",
@@ -4382,7 +4491,10 @@
   },
   {
     "title": "だんだん早くなる",
-    "aliases": []
+    "aliases": [
+      "단단 하야쿠 나루",
+      "점점 빨라져"
+    ]
   },
   {
     "title": "ちがう!!!",
@@ -4729,7 +4841,15 @@
   },
   {
     "title": "みくみくにしてあげる♪【してやんよ】",
-    "aliases": []
+    "aliases": [
+      "みくみくにしてあげる♪",
+      "みんなみくみくにしてあげる♪",
+      "모두 미쿠미쿠하게 해줄게♪",
+      "미쿠미쿠니 시테아게루",
+      "미쿠미쿠하게 해줄게",
+      "미쿠미쿠하게 해줄게♪",
+      "시테양요"
+    ]
   },
   {
     "title": "みなえをチェック！",
@@ -4771,7 +4891,13 @@
   },
   {
     "title": "もぺもぺ",
-    "aliases": []
+    "aliases": [
+      "Mope Mope",
+      "Mopemope",
+      "Mwfyuma Peustallora",
+      "mopemope",
+      "모페모페"
+    ]
   },
   {
     "title": "ももいろの鍵",
@@ -4864,7 +4990,12 @@
   },
   {
     "title": "アイドル",
-    "aliases": []
+    "aliases": [
+      "Idol(YOASOBI)",
+      "아이도르",
+      "아이돌(YOASOBI)",
+      "아이돌(요아소비)"
+    ]
   },
   {
     "title": "アイドル新鋭隊",
@@ -4914,7 +5045,14 @@
   },
   {
     "title": "アスノヨゾラ哨戒班",
-    "aliases": []
+    "aliases": [
+      "キミノヨゾラ哨戒班",
+      "내밤초",
+      "내일의 밤하늘 순찰대",
+      "내일의 밤하늘 초계반",
+      "너의 밤하늘 초계반",
+      "초계반"
+    ]
   },
   {
     "title": "アスヘノBRAVE",
@@ -5070,7 +5208,12 @@
   },
   {
     "title": "イガク",
-    "aliases": []
+    "aliases": [
+      "의학(UTAU 오리지널 곡)",
+      "이가쿠",
+      "이가쿠(UTAU 오리지널 곡)",
+      "키도리"
+    ]
   },
   {
     "title": "イタ電はやめて！ ぼくらのスカーレット・コール",
@@ -5110,7 +5253,10 @@
   },
   {
     "title": "インドア系ならトラックメイカー",
-    "aliases": []
+    "aliases": [
+      "인도어계라면 트랙메이커",
+      "트랙메이커"
+    ]
   },
   {
     "title": "インパアフェクシオン・ホワイトガアル",
@@ -5164,7 +5310,12 @@
   },
   {
     "title": "ウミユリ海底譚",
-    "aliases": []
+    "aliases": [
+      "ウミユリ海低譚",
+      "갯나리 해저담",
+      "바다나리 해저담",
+      "우미유리 해저담"
+    ]
   },
   {
     "title": "ウルトラトレーラー",
@@ -5181,7 +5332,9 @@
   },
   {
     "title": "エイリアンエイリアン",
-    "aliases": []
+    "aliases": [
+      "에일리언 에일리언"
+    ]
   },
   {
     "title": "エゴロック",
@@ -5308,7 +5461,9 @@
   },
   {
     "title": "オーバーライド",
-    "aliases": []
+    "aliases": [
+      "오버라이드"
+    ]
   },
   {
     "title": "オールマスター",
@@ -5318,7 +5473,12 @@
   },
   {
     "title": "カゲロウデイズ",
-    "aliases": []
+    "aliases": [
+      "아랑데",
+      "아지랑이 데이즈",
+      "카게로 데이즈",
+      "카게로우 데이즈"
+    ]
   },
   {
     "title": "カノン",
@@ -5394,7 +5554,14 @@
   },
   {
     "title": "キミノヨゾラ哨戒班",
-    "aliases": []
+    "aliases": [
+      "アスノヨゾラ哨戒班",
+      "내밤초",
+      "내일의 밤하늘 순찰대",
+      "내일의 밤하늘 초계반",
+      "너의 밤하늘 초계반",
+      "초계반"
+    ]
   },
   {
     "title": "キャットラビング",
@@ -5569,7 +5736,11 @@
   },
   {
     "title": "ゴーストルール",
-    "aliases": []
+    "aliases": [
+      "Ghost Rule",
+      "고룰",
+      "고스트 룰"
+    ]
   },
   {
     "title": "サイエンス",
@@ -5683,7 +5854,9 @@
   },
   {
     "title": "シャルル",
-    "aliases": []
+    "aliases": [
+      "샤를(VOCALOID 오리지널 곡)"
+    ]
   },
   {
     "title": "シュガーソングとビターステップ",
@@ -5879,7 +6052,12 @@
   },
   {
     "title": "セツナトリップ",
-    "aliases": []
+    "aliases": [
+      "세츠나 트립",
+      "순간 여행",
+      "순간 트립",
+      "찰나 여행"
+    ]
   },
   {
     "title": "セハガガガンバッちゃう！！",
@@ -5946,7 +6124,11 @@
   },
   {
     "title": "ダンスロボットダンス",
-    "aliases": []
+    "aliases": [
+      "Dance Robot Dance",
+      "댄로댄",
+      "댄스 로봇 댄스"
+    ]
   },
   {
     "title": "ダーリンダンス",
@@ -5978,11 +6160,24 @@
   },
   {
     "title": "チルノのパーフェクトさんすう教室",
-    "aliases": []
+    "aliases": [
+      "Cirno's Perfect Math Class",
+      "치르노의 산수교실",
+      "치르노의 퍼펙트 산수교실",
+      "치르노의 퍼펙트 산수학원",
+      "치르노의 퍼펙트 수학교실"
+    ]
   },
   {
     "title": "チルノのパーフェクトさんすう教室　⑨周年バージョン",
-    "aliases": []
+    "aliases": [
+      "Cirno's Perfect Math Class",
+      "チルノのパーフェクトさんすう教室",
+      "치르노의 산수교실",
+      "치르노의 퍼펙트 산수교실",
+      "치르노의 퍼펙트 산수학원",
+      "치르노의 퍼펙트 수학교실"
+    ]
   },
   {
     "title": "ツギハギスタッカート",
@@ -6012,7 +6207,10 @@
   },
   {
     "title": "テトリス",
-    "aliases": []
+    "aliases": [
+      "Tetoris",
+      "테토리스"
+    ]
   },
   {
     "title": "テリトリーバトル",
@@ -6022,7 +6220,10 @@
   },
   {
     "title": "テレキャスタービーボーイ",
-    "aliases": []
+    "aliases": [
+      "텔레캐스터 비보이",
+      "텔캐비"
+    ]
   },
   {
     "title": "テレパシ",
@@ -6187,11 +6388,20 @@
   },
   {
     "title": "ナイト・オブ・ナイツ",
-    "aliases": []
+    "aliases": [
+      "Night of Knights / Knight of Nights",
+      "나오나",
+      "나이트 오브 나이츠"
+    ]
   },
   {
     "title": "ナイト・オブ・ナイツ (Cranky Remix)",
-    "aliases": []
+    "aliases": [
+      "Night of Knights / Knight of Nights",
+      "ナイト・オブ・ナイツ",
+      "나오나",
+      "나이트 오브 나이츠"
+    ]
   },
   {
     "title": "ナミダと流星",
@@ -6232,7 +6442,13 @@
   },
   {
     "title": "ネトゲ廃人シュプレヒコール",
-    "aliases": []
+    "aliases": [
+      "ONLINE GAME ADDICTS SPRECHCHOR",
+      "넷 게임 폐인 슈프레히코어",
+      "넷게임 폐인 슈프레히코르",
+      "온라인 게임 폐인 슈프레히코르",
+      "온라인 게임 폐인 슈프레히코어"
+    ]
   },
   {
     "title": "ネ！コ！",
@@ -6287,7 +6503,11 @@
   },
   {
     "title": "ハッピーシンセサイザ",
-    "aliases": []
+    "aliases": [
+      "Happy Synthesizer",
+      "해피 신디사이저",
+      "해피 신시사이저"
+    ]
   },
   {
     "title": "ハム太郎とっとこうた",
@@ -6438,7 +6658,12 @@
   },
   {
     "title": "ヒバナ",
-    "aliases": []
+    "aliases": [
+      "ヒバナ -Reloaded-",
+      "불꽃(VOCALOID 오리지널 곡)",
+      "불꽃-Reloaded-",
+      "히바나(VOCALOID 오리지널 곡)"
+    ]
   },
   {
     "title": "ヒバリ",
@@ -6534,7 +6759,10 @@
   },
   {
     "title": "フォニイ",
-    "aliases": []
+    "aliases": [
+      "phony",
+      "포니(CeVIO 오리지널 곡)"
+    ]
   },
   {
     "title": "フォルテシモBELL",
@@ -6714,7 +6942,10 @@
   },
   {
     "title": "マトリョシカ",
-    "aliases": []
+    "aliases": [
+      "Matoryoshka",
+      "마트료시카(VOCALOID 오리지널 곡)"
+    ]
   },
   {
     "title": "マヌルネコのうた",
@@ -6784,11 +7015,18 @@
   },
   {
     "title": "メズマライザー",
-    "aliases": []
+    "aliases": [
+      "Mesmerizer",
+      "메스머라이저",
+      "메즈마라이자",
+      "메즈머라이저"
+    ]
   },
   {
     "title": "メランコリック",
-    "aliases": []
+    "aliases": [
+      "멜랑콜릭"
+    ]
   },
   {
     "title": "メルティランドナイトメア",
@@ -6834,7 +7072,11 @@
   },
   {
     "title": "モニタリング",
-    "aliases": []
+    "aliases": [
+      "モニタリング (Best Friend Remix)",
+      "모니터링(VOCALOID 오리지널 곡)",
+      "베프터링"
+    ]
   },
   {
     "title": "モンスターカミング",
@@ -6911,7 +7153,10 @@
   },
   {
     "title": "ラビットホール",
-    "aliases": []
+    "aliases": [
+      "Pure Pure",
+      "래빗 홀(VOCALOID 오리지널 곡)"
+    ]
   },
   {
     "title": "ラブって♡ジュエリー♪えんじぇる☆ブレイク！！",
@@ -6999,7 +7244,13 @@
   },
   {
     "title": "ルカルカ★ナイトフィーバー",
-    "aliases": []
+    "aliases": [
+      "나이트피버",
+      "다메다메요",
+      "루카루카 나이트 피버",
+      "루카루카 나이트피버",
+      "루카루카★나이트 피버"
+    ]
   },
   {
     "title": "レッツゴー!陰陽師",
@@ -7028,11 +7279,22 @@
   },
   {
     "title": "ロキ",
-    "aliases": []
+    "aliases": [
+      "ROKI",
+      "로키(VOCALOID 오리지널 곡)"
+    ]
   },
   {
     "title": "ロストワンの号哭",
-    "aliases": []
+    "aliases": [
+      "Lost One's Weeping",
+      "The Lamentations of the Lost Ones",
+      "로스트 원의 호곡",
+      "로스트원의 호곡",
+      "로원호",
+      "로호곡",
+      "묵뽓"
+    ]
   },
   {
     "title": "ロストワードクロニカル",
@@ -7042,7 +7304,11 @@
   },
   {
     "title": "ロミオとシンデレラ",
-    "aliases": []
+    "aliases": [
+      "ロメオとシンデレラ",
+      "로미신",
+      "로미오와 신데렐라"
+    ]
   },
   {
     "title": "ロータスイーター",
@@ -7086,11 +7352,21 @@
   },
   {
     "title": "ワールズエンド・ダンスホール",
-    "aliases": []
+    "aliases": [
+      "world's end dancehall",
+      "ワールド エンド ダンスホール",
+      "월엔댄",
+      "월즈 엔드 댄스홀"
+    ]
   },
   {
     "title": "ワールドイズマイン CPK! Remix (Anime ver.)",
-    "aliases": []
+    "aliases": [
+      "World is Mine",
+      "ワールドイズマイン",
+      "월드 이즈 마인",
+      "월이마"
+    ]
   },
   {
     "title": "ワールドワイドワンダー",
@@ -7117,11 +7393,20 @@
   },
   {
     "title": "ヴァンパイア",
-    "aliases": []
+    "aliases": [
+      "The Vampire",
+      "뱀파이어(Deco*27)",
+      "뱀파이어(VOCALOID 오리지널 곡)",
+      "아따시밤파이아",
+      "아따시밤파이야",
+      "아타시밤파이아"
+    ]
   },
   {
     "title": "ヴィラン",
-    "aliases": []
+    "aliases": [
+      "빌런(VOCALOID 오리지널 곡)"
+    ]
   },
   {
     "title": "㋰責任集合体",
@@ -7199,7 +7484,12 @@
   },
   {
     "title": "人マニア",
-    "aliases": []
+    "aliases": [
+      "사람 마니아",
+      "인간 마니아",
+      "히토 마니아",
+      "히토마니아"
+    ]
   },
   {
     "title": "人生リセットボタン",
@@ -7282,7 +7572,13 @@
   },
   {
     "title": "六兆年と一夜物語",
-    "aliases": []
+    "aliases": [
+      "6조 년과 하룻밤 이야기",
+      "6조년",
+      "A Tale of Six Trillion Years and a Night",
+      "육조 년과 하룻밤 이야기",
+      "육조년"
+    ]
   },
   {
     "title": "六厘歌",
@@ -7341,7 +7637,12 @@
   },
   {
     "title": "初音ミクの消失",
-    "aliases": []
+    "aliases": [
+      "消失",
+      "미쿠 소실",
+      "하소실",
+      "하츠네 미쿠의 소실"
+    ]
   },
   {
     "title": "初音ミクの激唱",
@@ -7353,7 +7654,12 @@
   },
   {
     "title": "初音天地開闢神話",
-    "aliases": []
+    "aliases": [
+      "천개신",
+      "초음천지개벽신화",
+      "하츠네 천지개벽 신화",
+      "하츠네천지개벽신화"
+    ]
   },
   {
     "title": "前前前世",
@@ -7376,7 +7682,10 @@
   },
   {
     "title": "創聖のアクエリオン",
-    "aliases": []
+    "aliases": [
+      "1만 2천년의 사랑",
+      "창성의 아쿠에리온(노래)"
+    ]
   },
   {
     "title": "劣等上等",
@@ -7388,7 +7697,9 @@
   },
   {
     "title": "勇者",
-    "aliases": []
+    "aliases": [
+      "용사(YOASOBI)"
+    ]
   },
   {
     "title": "勝手に生きましょ",
@@ -7419,7 +7730,12 @@
   },
   {
     "title": "千本桜",
-    "aliases": []
+    "aliases": [
+      "千本桜(VOCALOID 오리지널 곡)",
+      "천그루의 벚꽃",
+      "천그루의 벚나무",
+      "천본앵(VOCALOID 오리지널 곡)"
+    ]
   },
   {
     "title": "単一指向性オーバーブルーム",
@@ -7467,7 +7783,10 @@
   },
   {
     "title": "君の知らない物語",
-    "aliases": []
+    "aliases": [
+      "네가 모르는 이야기",
+      "네모이"
+    ]
   },
   {
     "title": "吾輩よ猫であれ",
@@ -7541,7 +7860,13 @@
   },
   {
     "title": "回レ！雪月花",
-    "aliases": []
+    "aliases": [
+      "ㅁㄴ설월화",
+      "돌아라 설월화",
+      "돌아라! 설월화",
+      "마와레",
+      "마와레 세츠게츠카"
+    ]
   },
   {
     "title": "囲い無き世は一期の月影",
@@ -7582,7 +7907,14 @@
   },
   {
     "title": "夏祭り",
-    "aliases": []
+    "aliases": [
+      "夏祭り(JITTERIN'JINN)",
+      "夏祭り(Whiteberry)",
+      "나츠마츠리(JITTERIN'JINN)",
+      "나츠마츠리(Whiteberry)",
+      "나츠마츠리(지터린 진)",
+      "나츠마츠리(화이트베리)"
+    ]
   },
   {
     "title": "夜に駆ける",
@@ -7655,7 +7987,9 @@
   },
   {
     "title": "天国と地獄",
-    "aliases": []
+    "aliases": [
+      "천국과 지옥(음악)"
+    ]
   },
   {
     "title": "天国と地獄 -言ノ葉リンネ-",
@@ -7845,7 +8179,12 @@
   },
   {
     "title": "幸せになれる隠しコマンドがあるらしい",
-    "aliases": []
+    "aliases": [
+      "미기 시타 우에 미기",
+      "행복커맨드",
+      "행복해질 수 있는 숨겨진 커맨드가 있다는 것 같다",
+      "행커맨"
+    ]
   },
   {
     "title": "幻想に咲いた花",
@@ -7917,7 +8256,10 @@
   },
   {
     "title": "強風オールバック",
-    "aliases": []
+    "aliases": [
+      "강풍 올백",
+      "강풍 올백머리"
+    ]
   },
   {
     "title": "彗星ハネムーン",
@@ -7996,7 +8338,13 @@
   },
   {
     "title": "恋愛裁判",
-    "aliases": []
+    "aliases": [
+      "Love Trial",
+      "れんあいさいばん",
+      "戀愛裁判",
+      "렌아이사이반",
+      "연애재판"
+    ]
   },
   {
     "title": "患部で止まってすぐ溶ける～狂気の優曇華院",
@@ -8106,7 +8454,10 @@
   },
   {
     "title": "放課後ストライド",
-    "aliases": []
+    "aliases": [
+      "방과 후 스트라이드",
+      "방과후 스트라이드"
+    ]
   },
   {
     "title": "敗北の少年",
@@ -8244,11 +8595,33 @@
   },
   {
     "title": "最終鬼畜妹フランドール・S",
-    "aliases": []
+    "aliases": [
+      "Last Brutal Sister Flandre S",
+      "Saishuu kichiku imouto Flandre-S",
+      "最終鬼畜妹フランドール・Ｓ",
+      "最終鬼畜妹・一部声",
+      "超最終鬼畜妹フランドール・S",
+      "초 최종귀축 여동생 플랑드르 S",
+      "최종귀축 여동생 플랑드르 S",
+      "플랑 S",
+      "플랑도르 S",
+      "플랑드르 S"
+    ]
   },
   {
     "title": "最終鬼畜妹・一部声",
-    "aliases": []
+    "aliases": [
+      "Last Brutal Sister Flandre S",
+      "Saishuu kichiku imouto Flandre-S",
+      "最終鬼畜妹フランドール・S",
+      "最終鬼畜妹フランドール・Ｓ",
+      "超最終鬼畜妹フランドール・S",
+      "초 최종귀축 여동생 플랑드르 S",
+      "최종귀축 여동생 플랑드르 S",
+      "플랑 S",
+      "플랑도르 S",
+      "플랑드르 S"
+    ]
   },
   {
     "title": "最速最高シャッターガール",
@@ -8397,7 +8770,15 @@
   },
   {
     "title": "残酷な天使のテーゼ",
-    "aliases": []
+    "aliases": [
+      "A Cruel Angel's Thesis",
+      "소년이여 신화가 되어라",
+      "잔고쿠나텐시노테제",
+      "잔천테",
+      "잔테제",
+      "잔혹천사",
+      "잔혹한 천사의 테제"
+    ]
   },
   {
     "title": "残響散歌",
@@ -8480,7 +8861,10 @@
   },
   {
     "title": "深海少女",
-    "aliases": []
+    "aliases": [
+      "deep sea girl",
+      "심해소녀"
+    ]
   },
   {
     "title": "渦状銀河のシンフォニエッタ",
@@ -8508,7 +8892,12 @@
   },
   {
     "title": "炉心融解",
-    "aliases": []
+    "aliases": [
+      "ろしんゆうかい",
+      "노심융해",
+      "로리유괴",
+      "로신유카이"
+    ]
   },
   {
     "title": "炎歌 -ほむらうた-",
@@ -8662,7 +9051,9 @@
   },
   {
     "title": "白い雪のプリンセスは",
-    "aliases": []
+    "aliases": [
+      "하얀 눈의 프린세스는"
+    ]
   },
   {
     "title": "白ゆき",
@@ -8710,7 +9101,14 @@
   },
   {
     "title": "砂の惑星 feat. HATSUNE MIKU",
-    "aliases": []
+    "aliases": [
+      "砂の惑星",
+      "모래 행성",
+      "모래 혹성",
+      "모래의 행성",
+      "모래의 혹성",
+      "모래행성"
+    ]
   },
   {
     "title": "神々が恋した幻想郷",
@@ -8727,7 +9125,11 @@
   },
   {
     "title": "神っぽいな",
-    "aliases": []
+    "aliases": [
+      "God-ish",
+      "신 같네",
+      "카밋포이나"
+    ]
   },
   {
     "title": "神威",
@@ -9106,7 +9508,10 @@
   },
   {
     "title": "裏表ラバーズ",
-    "aliases": []
+    "aliases": [
+      "겉과 속의 러버즈",
+      "표리 러버즈"
+    ]
   },
   {
     "title": "解けないように",
@@ -9138,7 +9543,12 @@
   },
   {
     "title": "超ナイト・オブ・ナイツ",
-    "aliases": []
+    "aliases": [
+      "Night of Knights / Knight of Nights",
+      "ナイト・オブ・ナイツ",
+      "나오나",
+      "나이트 오브 나이츠"
+    ]
   },
   {
     "title": "超常マイマイン",
@@ -9149,7 +9559,18 @@
   },
   {
     "title": "超最終鬼畜妹フランドール・S",
-    "aliases": []
+    "aliases": [
+      "Last Brutal Sister Flandre S",
+      "Saishuu kichiku imouto Flandre-S",
+      "最終鬼畜妹フランドール・S",
+      "最終鬼畜妹フランドール・Ｓ",
+      "最終鬼畜妹・一部声",
+      "초 최종귀축 여동생 플랑드르 S",
+      "최종귀축 여동생 플랑드르 S",
+      "플랑 S",
+      "플랑도르 S",
+      "플랑드르 S"
+    ]
   },
   {
     "title": "超熊猫的周遊記（ワンダーパンダートラベラー）",
@@ -9437,7 +9858,10 @@
   },
   {
     "title": "魔法少女とチョコレゐト",
-    "aliases": []
+    "aliases": [
+      "Magical Girl and Chocolate",
+      "마법소녀와 초콜릿"
+    ]
   },
   {
     "title": "魔法少女になるしかねぇ",
@@ -9445,7 +9869,10 @@
   },
   {
     "title": "魔理沙は大変なものを盗んでいきました",
-    "aliases": []
+    "aliases": [
+      "마리사는 엄청난 것을 훔쳐갔습니다",
+      "와라닌교니"
+    ]
   },
   {
     "title": "麒麟",

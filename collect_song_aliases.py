@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 import sys
 import time
+import unicodedata
 from urllib.parse import quote, unquote, urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
@@ -163,6 +164,25 @@ def write_json(path, data):
     return content
 
 
+def alias_document_for_song(song):
+    document = song['document']
+    if not document:
+        return None
+    # Rhythm-game coverage subpages have no song-name redirects themselves.
+    # Their parent article is the actual song whose aliases we need.
+    parent = re.sub(r'/리듬\s*게임\s*수록(?:곡)?(?:/.*)?$', '', document)
+    if parent != document:
+        return parent
+    if song['fragment']:
+        def key(text):
+            return ''.join(c for c in unicodedata.normalize('NFKC', text).casefold() if c.isalnum())
+        # Permit a section of the song itself, but not a track inside an album.
+        title_key, document_key = key(song['title']), key(document)
+        if not title_key or title_key != document_key:
+            return None
+    return document
+
+
 def collect(client, cache_path, refresh=False, limit=None):
     songs = parse_songs(client.get("/w/" + quote(LIST_DOCUMENT, safe="")))
     print(f"수록곡 {len(songs)}개 발견", flush=True)
@@ -175,11 +195,9 @@ def collect(client, cache_path, refresh=False, limit=None):
             raise ValueError("캐시 형식이 잘못되었습니다. --refresh로 다시 수집하세요.")
     results = []
     for index, song in enumerate(songs, 1):
-        title, document = song["title"], song["document"]
+        title, document = song["title"], alias_document_for_song(song)
         aliases = []
-        # A section link can point to an album or franchise. Its redirects are
-        # not aliases for the individual song, so do not import them.
-        if document and not song["fragment"]:
+        if document:
             if document not in cache:
                 cache[document] = client.aliases(document)
                 write_json(cache_path, cache)

@@ -8,6 +8,19 @@ from collect_song_aliases import parse_songs, parse_backlinks, collect, main, Wi
 
 
 class CollectorTests(unittest.TestCase):
+    def test_rhythm_game_subpage_fragment_uses_song_main_document(self):
+        client = Mock()
+        client.get.return_value = '''<table><tr><td>곡명</td><td>아티스트</td><td>BPM</td></tr>
+        <tr><td><a href="/w/메스머라이저/리듬%20게임%20수록#s-11">メズマライザー</a></td>
+        <td>A</td><td>185</td></tr></table>'''
+        client.aliases.return_value = ['메스머라이저', '메즈머라이저', 'Mesmerizer', 'メズマライザー']
+        with tempfile.TemporaryDirectory() as directory:
+            result = collect(client, Path(directory) / 'cache.json')
+        self.assertEqual(result[0]['title'], 'メズマライザー')
+        self.assertIn('메스머라이저', result[0]['aliases'])
+        self.assertIn('Mesmerizer', result[0]['aliases'])
+        client.aliases.assert_called_once_with('메스머라이저')
+
     def test_display_title_ignores_pipes_and_chart_suffix_not_document_name(self):
         html = '''<table><tr><td>곡명</td><td>아티스트</td><td>BPM</td></tr>
         <tr><td>|<a href="/w/표리일체(VOCALOID%20오리지널%20곡)"

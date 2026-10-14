@@ -480,11 +480,13 @@ def make_song_embed(
 
     embed.add_field(
         name=chart_1p,
-        value='\n'.join(part for part in [chart_2p if p2_sheet is not None else '',
-                                         format_song_constants(chart, p1_sheet['type'])] if part) or '\u200b',
+        value=chart_2p,
         inline=False,
     )
 
+    constants = format_song_constants(chart, p1_sheet['type'])
+    if constants:
+        embed.set_footer(text=constants)
     return embed
 
 
@@ -567,7 +569,7 @@ def make_note_score_embed(chart: dict, sheet: dict, player: str = "") -> discord
         embed.add_field(name="BREAK · 판정 1개당 감소율 (보너스 포함)",
                         value='\n'.join(f"{labels[k]}: −{float(loss):.4f}% = {float(loss / tap_score):.1f} TAP"
                                         for k, loss in stats['break_losses'].items()), inline=False)
-    embed.set_footer(text="TAP/TOUCH: GREAT = −0.2 TAP, GOOD = −0.5 TAP / 1F ≈ 16.67ms (BREAK TAP 기준)")
+    embed.set_footer(text="GREAT = -0.2TAP / GOOD = -0.5TAP / 1F = 16.67ms")
     return embed
 
 
@@ -923,7 +925,8 @@ async def find_song(interaction: discord.Interaction, song: str, difficulty: str
         return
     embed = make_song_embed(chart, sheet, None)
     if fallback:
-        embed.set_footer(text="선택한 채보에 Re:MASTER가 없어 MASTER를 표시합니다.")
+        embed.set_footer(text='\n'.join(part for part in [embed.footer.text,
+                              "선택한 채보에 Re:MASTER가 없어 MASTER를 표시합니다."] if part))
     view = SongResultView(user_id=interaction.user.id, current_chart=chart, current_p1_sheet=sheet)
     await interaction.response.send_message(embed=embed, view=view)
 

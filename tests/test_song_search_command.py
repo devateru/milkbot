@@ -42,6 +42,7 @@ class SongCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(embed.fields[0].name, 'MASTER 13.2')
         self.assertTrue(embed.fields[0].value)
         self.assertIn('Re:MASTER', embed.footer.text)
+        self.assertIn('[DX] 13.2', embed.footer.text)
 
     async def test_note_button_displays_selected_sheet_and_missing_data_message(self):
         chart = {'title': 'Song', 'artist': 'Artist', 'imageName': 'cover.png'}
@@ -101,7 +102,7 @@ class SongCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('MISS', embed.fields[2].value)
         self.assertIn('PERFECT (±2F): −0.0417% = 0.4 TAP', embed.fields[3].value)
         self.assertIn('PERFECT (±3F): −0.0833%', embed.fields[3].value)
-        self.assertIn('GREAT = −0.2 TAP', embed.footer.text)
+        self.assertEqual(embed.footer.text, 'GREAT = -0.2TAP / GOOD = -.5TAP / 1F = 16.67ms')
 
     def test_shared_song_embed_keeps_design_and_shows_constants_below_selection(self):
         chart = {'title': 'Song', 'artist': 'A', 'imageName': 'cover.png',
@@ -112,7 +113,8 @@ class SongCommandTests(unittest.IsolatedAsyncioTestCase):
         embed = self.namespace['make_song_embed'](chart, selected, None)
         self.assertEqual(embed.description, 'A')
         self.assertEqual(embed.fields[0].name, 'MASTER 14.6')
-        self.assertEqual(embed.fields[0].value, '[DX] 5.0 / 14.6\n[ST] 14.3')
+        self.assertEqual(embed.fields[0].value, '\u200b')
+        self.assertEqual(embed.footer.text, '[DX] 5.0 / 14.6\n[ST] 14.3')
         self.assertEqual(embed.thumbnail.url, self.namespace['COVER_BASE_URL'] + 'cover.png')
 
     async def test_manual_text_is_rejected_instead_of_random_selection(self):

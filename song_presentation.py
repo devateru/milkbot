@@ -55,7 +55,7 @@ def format_song_constants(chart, selected_type):
         label = sheet['difficulty'].strip('【】[]') or 'UTAGE'
         level = str(sheet.get('level') or '?').rstrip('?') or '?'
         buddy = sheet.get('isBuddy') or '🤝' in (sheet.get('comment') or '') or 'バディ' in (sheet.get('comment') or '')
-        line = f'[{label}] {level}' + (' 🤝' if buddy else '')
+        line = f'[{label}] {level}' + ('🤝' if buddy else '')
         if line not in seen:
             lines.append(line)
             seen.add(line)

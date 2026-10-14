@@ -55,7 +55,9 @@ def parse_songs(html):
             clean = BeautifulSoup(str(cell), "html.parser")
             for note in clean.select('a[href^="#fn"], a[href^="#rfn"], sup'):
                 note.decompose()
-            displayed_title = clean.get_text("", strip=True)
+            # HTML link text is the label after the wiki [[document|label]]
+            # separator. Keep that label, never the href/title document name.
+            displayed_title = clean.get_text("", strip=True).replace('|', '').strip()
             title = re.sub(r"\s*\((?:DX|STD)\)\s*$", "", displayed_title).rstrip()
             if not title:
                 continue

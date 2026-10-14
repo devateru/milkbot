@@ -8,6 +8,21 @@ from collect_song_aliases import parse_songs, parse_backlinks, collect, main, Wi
 
 
 class CollectorTests(unittest.TestCase):
+    def test_display_title_ignores_pipes_and_chart_suffix_not_document_name(self):
+        html = '''<table><tr><td>곡명</td><td>아티스트</td><td>BPM</td></tr>
+        <tr><td>|<a href="/w/표리일체(VOCALOID%20오리지널%20곡)"
+        title="표리일체(VOCALOID 오리지널 곡)">表裏一体</a>| (DX)</td><td>A</td><td>180</td></tr>
+        <tr><td><a href="/w/표리일체(VOCALOID%20오리지널%20곡)">表裏一体</a></td><td>A</td><td>180</td></tr></table>'''
+        client = Mock()
+        client.get.return_value = html
+        client.aliases.return_value = ['表裏一体(VOCALOID 오리지널 곡)', '표리일체(VOCALOID 오리지널 곡)']
+        with tempfile.TemporaryDirectory() as directory:
+            result = collect(client, Path(directory) / 'cache.json')
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['title'], '表裏一体')
+        self.assertEqual(len(result[0]['aliases']), 2)
+        client.aliases.assert_called_once_with('표리일체(VOCALOID 오리지널 곡)')
+
     def test_chart_suffix_variants_are_merged_before_collection(self):
         html = '''<table><tr><td>곡명</td><td>아티스트</td><td>BPM</td></tr>
         <tr><td><a href="/w/39(DX)">39(DX)</a></td><td>A</td><td>180</td></tr>

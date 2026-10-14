@@ -101,7 +101,8 @@
   {
     "title": "AFTER PANDORA",
     "aliases": [
-      "애프터 판도라"
+      "애프터 판도라",
+      "앺판"
     ]
   },
   {
@@ -349,7 +350,8 @@
   {
     "title": "BULK UP(GAME EXCLUSIVE EDIT)",
     "aliases": [
-      "BULK UP"
+      "BULK UP",
+      "벌크업(maimai 시리즈)"
     ]
   },
   {
@@ -4780,7 +4782,9 @@
   },
   {
     "title": "やめろ！聴くな！",
-    "aliases": []
+    "aliases": [
+      "그만둬! 듣지 마!"
+    ]
   },
   {
     "title": "ゆけむり魂温泉 II",
@@ -5814,7 +5818,9 @@
   },
   {
     "title": "スリップフリップ",
-    "aliases": []
+    "aliases": [
+      "슬립 플립"
+    ]
   },
   {
     "title": "スロウダウナー",
@@ -7867,7 +7873,6 @@
       "ghost city tokyo",
       "유령 도쿄",
       "유령 동경",
-      "유령도쿄",
       "유령시티 도쿄"
     ]
   },

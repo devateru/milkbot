@@ -22,6 +22,7 @@ class Note:
     time: float
     earliest: float
     latest: float
+    lane: int | None = None
 
 
 @dataclass(frozen=True)
@@ -79,11 +80,12 @@ def duration(spec: str, bpm: Fraction, slide: bool = False) -> tuple[Fraction, F
 
 def parse_token(token: str, time: Fraction, bpm: Fraction) -> list[Note]:
     if re.fullmatch(r'[1-8]+', token):
-        return [Note('tap', float(time), float(time), float(time)) for _ in token]
+        return [Note('tap', float(time), float(time), float(time), int(position)) for position in token]
     match = HEAD.match(token)
     if not match:
         raise ValueError(f'지원하지 않는 simai 노트: {token}')
     position, flags = match.groups()
+    lane = int(position) if position.isdigit() else None
     tail = token[match.end():]
     start = float(time)
     if not tail or 'h' in flags:
@@ -95,11 +97,11 @@ def parse_token(token: str, time: Fraction, bpm: Fraction) -> list[Note]:
         kind = 'break' if 'b' in flags else ('tap' if position.isdigit() else 'touch')
         if '?' in flags or '!' in flags:
             raise ValueError(f'별 머리 옵션에 SLIDE 경로가 없습니다: {token}')
-        return [Note(kind, start, start, start)]
+        return [Note(kind, start, start, start, lane)]
     if not position.isdigit():
         raise ValueError(f'SLIDE 시작 위치가 올바르지 않습니다: {token}')
     notes = [] if '?' in flags or '!' in flags else [
-        Note('break' if 'b' in flags else 'tap', start, start, start)]
+        Note('break' if 'b' in flags else 'tap', start, start, start, lane)]
     for branch in tail.split('*'):
         cursor = 0
         has_path = False

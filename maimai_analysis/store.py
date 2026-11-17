@@ -7,7 +7,7 @@ from pathlib import Path
 import sqlite3
 
 from .mai_notes import CachedChart
-from .simai import Note, Simai, Section
+from .simai import Note, Simai, Section, parse_simai
 from .tracking import identity_name, identity_key
 
 
@@ -31,7 +31,10 @@ def pack(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
 
 
-def decode_chart(value) -> Simai:
+def decode_chart(value, source, chart_key) -> Simai:
+    # Older cache entries retain the source but did not store note lanes.
+    if source and 'lane' not in value['notes'][0]:
+        return parse_simai(source, chart_key.rsplit(':', 1)[-1])
     return Simai(tuple(Note(**note) for note in value['notes']), value['end'], value['first'])
 
 
@@ -87,7 +90,7 @@ class Store:
         with self.connection() as db:
             row = db.execute('SELECT source, chart FROM charts WHERE url = ? AND chart_key = ?',
                              (url, chart_key)).fetchone()
-        return CachedChart(url, row['source'], decode_chart(json.loads(row['chart']))) if row else None
+        return CachedChart(url, row['source'], decode_chart(json.loads(row['chart']), row['source'], chart_key)) if row else None
 
     def save_target(self, user_id, chart_key, cached, sections):
         self.cache_chart(chart_key, cached)
@@ -103,7 +106,7 @@ class Store:
                 JOIN charts USING (url, chart_key) WHERE user_id = ? AND chart_key = ?''',
                              (str(user_id), chart_key)).fetchone()
         if row:
-            return Target(CachedChart(row['url'], row['source'], decode_chart(json.loads(row['chart']))),
+            return Target(CachedChart(row['url'], row['source'], decode_chart(json.loads(row['chart']), row['source'], chart_key)),
                           tuple(Section(**section) for section in json.loads(row['sections'])))
         return None
 

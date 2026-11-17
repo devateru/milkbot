@@ -45,19 +45,20 @@ class Image:
 def resolve(video: Video, live: bool, height: int) -> Source:
     import yt_dlp
 
-    fmt = (f'b[protocol^=m3u8][height<={height}]/bv[protocol^=m3u8][height<={height}]'
-           if live else f'bv[protocol=https][vcodec^=avc1][height<={height}]/'
-                        f'b[protocol=https][height<={height}]/b[protocol^=m3u8][height<={height}]')
+    hls = f'bv*[protocol^=m3u8][height<={height}]'
+    fmt = (f'b[protocol^=m3u8][height<={height}]/{hls}' if live else
+           f'{hls}/bv*[protocol=https][vcodec^=avc1][height<={height}]/bv*[protocol=https][height<={height}]')
     options = {'quiet': True, 'no_warnings': True, 'noplaylist': True, 'format': fmt,
                'socket_timeout': 10, 'extractor_retries': 1}
     runtime = os.getenv('MAIMAI_YOUTUBE_DENO')
-    if runtime:
-        options['js_runtimes'] = {'deno': {'path': runtime}}
+    options['js_runtimes'] = {'deno': {'path': runtime} if runtime else {}, 'node': {}}
     try:
         with yt_dlp.YoutubeDL(options) as downloader:
             row = downloader.extract_info(video.url, download=False)
     except yt_dlp.utils.DownloadError as error:
-        raise MediaError('YouTube 영상 스트림을 열 수 없습니다. 공개 범위와 미디어 형식을 확인해주세요.') from error
+        reason = re.sub(r'https?://\S+', '[URL]', str(error))
+        log.warning('maimai YouTube resolve failed video=%s live=%s: %s', video.id, live, reason)
+        raise MediaError('YouTube에서 분석 가능한 스트림을 가져오지 못했습니다.') from error
     if row.get('is_live', False) != live:
         raise MediaError('현재 방송 중인 영상만 라이브 분석에서 열 수 있습니다.' if live else
                          '라이브 방송은 /라이브분석에서 열어주세요.')
@@ -132,7 +133,7 @@ class Decoder:
         self.width, self.height, self.fps = width, height, fps
         self.ffmpeg = os.getenv('MAIMAI_FFMPEG', 'ffmpeg')
 
-    def frames(self, url, offset, length=None, *, headers=None, epoch=None):
+    def frames(self, url, offset, length=None, *, headers=None, epoch=None, fps=None):
         command = [self.ffmpeg, '-nostdin', '-hide_banner', '-loglevel', 'info',
                    '-rw_timeout', '12000000', '-threads', '2', '-filter_threads', '1']
         if headers:
@@ -142,7 +143,7 @@ class Decoder:
         command += ['-i', url, '-an', '-sn', '-dn']
         if length is not None:
             command += ['-t', str(length)]
-        interval = 1 / self.fps
+        interval = 1 / (fps or self.fps)
         filters = (f"select='isnan(prev_selected_t)+gte(t-prev_selected_t+0.000001,{interval})',"
                    f'scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,'
                    f'pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2,format=gray,showinfo')
@@ -184,7 +185,7 @@ class Decoder:
             process.stdout.close()
             process.stderr.close()
 
-    def vod(self, source, start, end):
+    def vod(self, source, start, end, *, fps=None):
         if source.duration is not None and start >= source.duration:
             raise MediaError('분석할 시작 시간이 영상 길이를 벗어납니다.')
         end = min(end, source.duration) if end is not None and source.duration else end
@@ -192,15 +193,21 @@ class Decoder:
         if source.protocol.startswith('m3u8'):
             import requests
 
-            response = requests.get(source.url, headers=source.headers, timeout=HTTP_TIMEOUT)
-            response.raise_for_status()
-            segments, ended = parse_hls(response.text, response.url)
-            if not ended or segments[0].sequence != 0:
-                raise MediaError('종료한 방송의 처음부터 재생 가능한 다시보기 목록이 아직 준비되지 않았습니다.')
-            yield from self.frames(source.url, start, length, headers=source.headers)
+            try:
+                response = requests.get(source.url, headers=source.headers, timeout=HTTP_TIMEOUT)
+                response.raise_for_status()
+            except requests.RequestException as error:
+                raise MediaError('YouTube 다시보기 재생 목록을 읽지 못했습니다.') from error
+            lines = response.text.splitlines()
+            sequences = [line.partition(':')[2].strip() for line in lines if line.startswith('#EXT-X-MEDIA-SEQUENCE:')]
+            # FFmpeg seeks a completed VOD by elapsed time. Live DVR alone needs program dates.
+            if (not lines or lines[0] != '#EXTM3U' or '#EXT-X-ENDLIST' not in lines or
+                    (sequences and sequences != ['0']) or not any(line.startswith('#EXTINF:') for line in lines)):
+                raise MediaError('YouTube 다시보기를 처음부터 재생할 수 있는 목록이 아직 준비되지 않았습니다.')
+            yield from self.frames(source.url, start, length, headers=source.headers, fps=fps)
             return
         with vod_input(source) as url:
-            yield from self.frames(url, start, length)
+            yield from self.frames(url, start, length, fps=fps)
 
     def live(self, source, requested, *, stop=None, busy=None):
         import requests

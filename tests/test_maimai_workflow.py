@@ -1,4 +1,6 @@
 import asyncio
+from dataclasses import asdict
+import json
 import os
 from pathlib import Path
 import runpy
@@ -11,12 +13,13 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from PIL import Image
 
+from maimai_analysis.capture import CaptureAlignment
 from maimai_analysis.commands import parse_times, goals_embed, register_analysis
 from maimai_analysis.delivery import Delivery
 from maimai_analysis.hud import score_digits, early_judgments
 from maimai_analysis.jobs import Job, play_key
 from maimai_analysis.mai_notes import CachedChart
-from maimai_analysis.media import Decoder
+from maimai_analysis.media import Decoder, Image as VideoFrame, MediaError, Source, resolve
 from maimai_analysis.scoring import Sample
 from maimai_analysis.service import AnalysisService, resource_usage
 from maimai_analysis.simai import parse_sections, parse_simai
@@ -84,6 +87,9 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
                                                  '12', first_note='12')
         self.assertIn('1번', interaction.followup.send.call_args.kwargs['embed'].description)
         self.assertIsNone(self.store.target(1, f'{option}:master'))
+        app.calibrate_for_interaction = AsyncMock(side_effect=MediaError('YouTube 영상 스트림을 열 수 없습니다.'))
+        await tree.get_command('구간확인').callback(interaction, option, f'https://youtu.be/{self.video}', '12')
+        self.assertIn('첫노트시간', interaction.followup.send.call_args.args[0])
         await tree.get_command('목표설정').callback(interaction, option, goals='2개:-0.1, 나머지:-0.05')
         saved = self.store.target(1, f'{option}:master')
         self.assertEqual([(section.first, section.last) for section in saved.sections], [(1, 2), (3, 4)])
@@ -119,6 +125,91 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         frames = list(decoder.frames(str(output), 0.5, 1))
         self.assertEqual([round(frame.time, 3) for frame in frames], [0.5, 0.75, 1, 1.25])
         self.assertTrue(all(len(frame.pixels) == 320 * 180 for frame in frames))
+
+    def test_resolve_prefers_seekable_vod_hls_with_video_only_variant(self):
+        from yt_dlp import YoutubeDL
+
+        direct = {'url': 'https://example.com/video.mp4', 'protocol': 'https',
+                  'vcodec': 'avc1.640020', 'acodec': 'none', 'height': 720}
+        hls = {**direct, 'url': 'https://example.com/video.m3u8', 'protocol': 'm3u8_native'}
+
+        def extract_info(downloader, url, download):
+            select = downloader.build_format_selector(downloader.params['format'])
+            return next(select({'formats': [direct, hls]}))
+
+        with patch.object(YoutubeDL, 'extract_info', extract_info):
+            self.assertEqual(resolve(Video(self.video, 0), False, 720).protocol, 'm3u8_native')
+
+    def test_complete_vod_hls_uses_relative_time_without_program_dates(self):
+        source = Source('https://example.com/video.m3u8', {}, 110, None, 'm3u8_native')
+        playlist = '#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:5.5,\na.ts\n#EXT-X-ENDLIST\n'
+        decoder = Decoder()
+        response = Mock(text=playlist, url=source.url)
+        with patch('requests.get', return_value=response), patch.object(decoder, 'frames', return_value=iter(())) as frames:
+            list(decoder.vod(source, 35, 88))
+            frames.assert_called_once_with(source.url, 35, 53, headers={}, fps=None)
+            for invalid in (playlist.replace('#EXT-X-ENDLIST', ''),
+                            playlist.replace('#EXTINF:', '#EXT-X-MEDIA-SEQUENCE:7\n#EXTINF:')):
+                with self.subTest(playlist=invalid), self.assertRaises(MediaError):
+                    response.text = invalid
+                    list(decoder.vod(source, 35, 88))
+
+    async def test_section_lookup_synchronizes_a_capture_without_broadcast_hud(self):
+        import cv2
+        import numpy as np
+
+        chart = parse_simai('(180){8},4,4,5,3,8,1,1,6,2,7,5,12,6,8,1,4,7,6,E')
+        lanes = (4, 4, 5, 3, 8, 1, 1, 6, 2, 7, 5, 1, 2, 6, 8, 1, 4, 7, 6)
+        width, height = 320, 180
+        center, radius = (160, 90), 78
+        origin = 1.8
+        background = np.zeros((height, width), np.uint8)
+        cv2.circle(background, center, radius, 200, 1, cv2.LINE_AA)
+        angles = np.deg2rad(np.arange(8) * 45 - 67.5)
+        points = np.round(np.array(center) + radius * np.column_stack((np.cos(angles), np.sin(angles)))).astype(int)
+        for point in points:
+            cv2.circle(background, tuple(point), 2, 235, -1)
+
+        def stream(source, start, end, **kwargs):
+            for step in range(180):
+                timestamp = step / 30
+                pixels = background.copy()
+                for note, lane in zip(chart.notes, lanes):
+                    if 0 < origin + note.time - timestamp < 0.055:
+                        cv2.circle(pixels, tuple(points[lane - 1]), 7, 235, 3, cv2.LINE_AA)
+                yield VideoFrame(timestamp, pixels.tobytes())
+
+        decoder = Mock(width=width, height=height, fps=8, vod=Mock(side_effect=stream))
+        vision = Mock()
+        vision.inspect_seats.return_value = {}
+        source = Source('https://example.com/capture', {}, 6, None)
+        service = AnalysisService(self.store, lambda: SongLookup([], []), AsyncMock(), decoder, lambda: vision,
+                                  resolve_source=Mock(return_value=source))
+        times = (2.45, 3.8, 4.6)
+        self.assertAlmostEqual(await service.calibrate(Video(self.video, 0), self.chart.key, chart, times),
+                               origin, delta=0.035)
+        decoder.vod.assert_called_once()
+        different = parse_simai('(180){8},1,6,4,5,3,7,8,2,6,1,4,78,2,4,7,5,3,1,E')
+        with self.assertRaisesRegex(ValueError, '첫노트시간'):
+            await service.calibrate(Video(self.video, 0), self.chart.key, different, times)
+
+    def test_capture_refuses_two_matching_offsets(self):
+        chart = parse_simai('(120){8}4,5,2,3,7,6,1,8,E')
+        capture = CaptureAlignment(320, 180, chart, (3.25, 3.5))
+        for time, lane in capture.anchors:
+            capture.events[lane].extend((2 + time, 3 + time))
+        self.assertIsNone(capture.origin())
+
+    def test_capture_lanes_can_be_read_from_existing_chart_cache(self):
+        source = '(120){4}14,8b,C,1-5[4:1],E'
+        chart = asdict(parse_simai(source))
+        for note in chart['notes']:
+            del note['lane']
+        with self.store.connection(write=True) as sql:
+            sql.execute('INSERT INTO charts VALUES (?, ?, ?, ?)',
+                        (self.cached.url, self.chart.key, source, json.dumps(chart)))
+        cached = self.store.cached_chart(self.cached.url, self.chart.key)
+        self.assertEqual([note.lane for note in cached.chart.notes], [1, 4, 8, None, 1, None])
 
     async def test_restart_keeps_settings_and_forgets_playback_jobs(self):
         self.store.set_nickname(1, 'Milk')

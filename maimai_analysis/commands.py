@@ -9,6 +9,7 @@ from discord import app_commands
 
 from .catalog import DIFFICULTIES, chart_record
 from .delivery import video_clock
+from .media import MediaError
 from .service import AnalysisService
 from .simai import adjustment_footer, note_at, parse_sections
 from .youtube import parse_time, parse_video, video_link
@@ -206,6 +207,9 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
             await interaction.followup.send(embed=embed, ephemeral=True)
         except asyncio.TimeoutError:
             await interaction.followup.send('자동 동기화 시간이 초과되었습니다. 첫노트시간을 입력해주세요.', ephemeral=True)
+        except MediaError as problem:
+            await interaction.followup.send(f'{problem} 영상에서 첫 판정 시각을 확인해 첫노트시간에 입력해주세요.',
+                                            ephemeral=True)
         except Exception as problem:
             await reply_error(interaction, problem)
 

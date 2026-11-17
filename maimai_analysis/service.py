@@ -9,6 +9,7 @@ from threading import Event
 import time
 
 from .alignment import align_from_gain, align_from_judgments
+from .capture import CAPTURE_FPS, CaptureAlignment
 from .catalog import Catalog
 from .delivery import Delivery
 from .jobs import Job, choose_guest, play_key
@@ -167,7 +168,7 @@ class AnalysisService:
                 self.busy[video] = Event()
                 self.live[video] = asyncio.create_task(self.run_live(video), name=f'maimai-live:{video}')
 
-    def scan(self, video, source, start, end, live, get_jobs, publish, sync_chart=None):
+    def scan(self, video, source, start, end, live, get_jobs, publish, sync_chart=None, capture=None):
         index = self.get_index()
         if index is None:
             raise MediaError('곡 검색 데이터를 준비 중입니다. 잠시 후 다시 시도해주세요.')
@@ -181,6 +182,7 @@ class AnalysisService:
         trackers = {seat: Tracker(catalog.resolve, targeted, seat=seat) for seat in ('left', 'right')}
         vision = self.make_vision()
         frames = (self.decoder.live(source, start, stop=self.stop, busy=self.busy[video]) if live else
+                  self.decoder.vod(source, start, end, fps=CAPTURE_FPS) if capture else
                   self.decoder.vod(source, start, end))
         invitations = {}
         announced = set()
@@ -188,6 +190,7 @@ class AnalysisService:
         started_at = measured_at = time.monotonic()
         cpu, _ = resource_usage()
         count = 0
+        track_at = start
 
         def finish(play, received):
             play.received_end = received
@@ -222,6 +225,11 @@ class AnalysisService:
                 count += 1
                 if live:
                     self.cursors[video] = last
+                if capture:
+                    capture.feed(image)
+                    if not image.discontinuity and last + .001 < track_at:
+                        continue
+                    track_at = last + 1 / self.decoder.fps
                 readings = vision.inspect_seats(image, trackers, live)
                 for seat, tracker in trackers.items():
                     frame = readings.get(seat)
@@ -408,13 +416,16 @@ class AnalysisService:
             self.vod_video = video.id
             try:
                 source = await self.db(self.resolve_source, video, False, self.decoder.height)
+                capture = await self.db(CaptureAlignment, self.decoder.width, self.decoder.height, chart, times)
                 await self.db(self.scan, video.id, source, start, end, False, tuple,
-                              lambda kind, play: plays.append(play), (chart_key, chart))
+                              lambda kind, play: plays.append(play), (chart_key, chart), capture)
             finally:
                 self.vod_video = None
                 if not self.stop.is_set():
                     self.launch_lives()
         origin = candidates(plays)
+        if origin is None:
+            origin = await self.db(capture.origin)
         if origin is None:
             raise ValueError('첫 노트 판정을 자동 확인하지 못했습니다. 첫노트시간을 입력해주세요.')
         return origin

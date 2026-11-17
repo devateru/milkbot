@@ -79,6 +79,20 @@ class SongLookupTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.index.select(self.index.autocomplete('Magical')[0]['value'], 'expert')
 
+    def test_resolve_direct_chart_names_without_an_autocomplete_choice(self):
+        dx, st = self.index.autocomplete('Magical Flavor')
+        self.assertEqual(self.index.resolve_selection('[ST] Magical Flavor'), st['value'])
+        self.assertEqual(self.index.resolve_selection('[STD] Magical Flavor'), st['value'])
+        self.assertEqual(self.index.resolve_selection('[dx] 매지컬 플레이버'), dx['value'])
+        self.assertEqual(self.index.resolve_selection(st['value']), st['value'])
+        self.assertEqual(self.index.resolve_selection('Only Standard'),
+                         self.index.autocomplete('Only Standard')[0]['value'])
+        self.assertEqual(self.index.autocomplete('[ST] Magical Flavor'), [st])
+        with self.assertRaisesRegex(ValueError, r'\[ST\].*\[DX\]'):
+            self.index.resolve_selection('Magical Flavor')
+        with self.assertRaisesRegex(ValueError, '찾을 수 없'):
+            self.index.resolve_selection('[DX] Only Standard')
+
     def test_region_overrides_and_unavailable_charts(self):
         index = SongLookup([{'title': 'Song', 'sheets': [
             sheet('dx', internalLevelValue=13.5, regionOverrides={'intl': {'internalLevelValue': 13.2}}),

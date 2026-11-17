@@ -133,8 +133,9 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
         index = get_index()
         if index is None:
             raise ValueError('곡 검색 데이터를 준비 중입니다. 잠시 후 다시 시도해주세요.')
-        record, sheet, fallback = index.select(song, difficulty)
-        return chart_record(song, record, sheet), record, sheet, fallback
+        value = index.resolve_selection(song)
+        record, sheet, fallback = index.select(value, difficulty)
+        return chart_record(value, record, sheet), record, sheet, fallback
 
     async def reply_error(interaction, problem):
         if not isinstance(problem, (ValueError, RuntimeError)):
@@ -152,7 +153,8 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.rename(song='곡', difficulty='난이도', chart_link='채보링크', goals='구간목표')
     @app_commands.choices(difficulty=CHOICES)
-    @app_commands.describe(chart_link='생략하면 저장된 링크 또는 mai-notes의 곡·채보 목록에서 찾습니다.',
+    @app_commands.describe(song='곡 제목을 직접 입력할 수 있습니다. 예) [ST] Credits',
+                           chart_link='생략하면 저장된 링크 또는 mai-notes의 곡·채보 목록에서 찾습니다.',
                            goals='예) 100개:-0.1, 나머지:-0.05 또는 1:-0.1, 101:-0.05. 입력하면 즉시 저장합니다.')
     async def set_target(interaction: discord.Interaction, song: str, chart_link: str | None = None,
                          difficulty: str = 'master', goals: str | None = None):

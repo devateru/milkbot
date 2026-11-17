@@ -83,14 +83,14 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         interaction.user.id = 1
         interaction.response.defer = AsyncMock()
         interaction.followup.send = AsyncMock()
-        await tree.get_command('구간확인').callback(interaction, option, f'https://youtu.be/{self.video}',
+        await tree.get_command('구간확인').callback(interaction, 'Credits', f'https://youtu.be/{self.video}',
                                                  '12', first_note='12')
         self.assertIn('1번', interaction.followup.send.call_args.kwargs['embed'].description)
         self.assertIsNone(self.store.target(1, f'{option}:master'))
         app.calibrate_for_interaction = AsyncMock(side_effect=MediaError('YouTube 영상 스트림을 열 수 없습니다.'))
         await tree.get_command('구간확인').callback(interaction, option, f'https://youtu.be/{self.video}', '12')
         self.assertIn('첫노트시간', interaction.followup.send.call_args.args[0])
-        await tree.get_command('목표설정').callback(interaction, option, goals='2개:-0.1, 나머지:-0.05')
+        await tree.get_command('목표설정').callback(interaction, '[ST] Credits', goals='2개:-0.1 나머지:-0.05')
         saved = self.store.target(1, f'{option}:master')
         self.assertEqual([(section.first, section.last) for section in saved.sections], [(1, 2), (3, 4)])
 

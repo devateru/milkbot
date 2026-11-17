@@ -28,6 +28,13 @@ class CoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_sections("2개:-0.1, 1개:-0.05", chart)
 
+    def test_goals_accept_whitespace_between_complete_entries(self):
+        chart = parse_simai("(120){4}1,2,3,4,E")
+        self.assertEqual(parse_sections("1:-0.04, 2: -0.04 3:-0.05\n4:-0.3", chart),
+                         parse_sections("1:-0.04, 2:-0.04, 3:-0.05, 4:-0.3", chart))
+        with self.assertRaises(ValueError):
+            parse_sections("1:-0.042:-0.04", chart)
+
     def test_gain_alignment_checks_first_gain_and_later_judgments(self):
         chart = parse_simai("(120){4},,1,2,3,4,E")
         samples = [Sample(time, '+', score) for time, score in

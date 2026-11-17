@@ -33,6 +33,14 @@ def title_key(text):
     return unicodedata.normalize('NFKC', re.sub(r'\s*\((DX|STD)\)\s*$', '', text)).casefold().strip()
 
 
+def split_chart_name(value):
+    name = unicodedata.normalize('NFKC', value).strip()
+    prefix = re.match(r'\[(STD?|DX)\]\s*', name, re.IGNORECASE)
+    if prefix is None:
+        return None, name
+    return ('dx' if prefix[1].lower() == 'dx' else 'std'), name[prefix.end():]
+
+
 def match_score(query, term):
     if query == term:
         return 0.0
@@ -97,9 +105,12 @@ class SongLookup:
     def autocomplete(self, query, limit=25):
         """Return [{name, value}], one option per available song/type pair."""
         self.reload_aliases_if_changed()
+        kind, query = split_chart_name(query)
         query = normalize(query)
         ranked = []
         for entry in self.entries:
+            if kind and not entry['value'].startswith(kind + ':'):
+                continue
             scores = [score for term in entry['terms']
                       if (score := match_score(query, term)) is not None]
             if scores:
@@ -107,6 +118,29 @@ class SongLookup:
         ranked.sort(key=lambda item: item[:3])
         return [{'name': entry['name'], 'value': entry['value']}
                 for *_, entry in ranked[:max(0, min(limit, 25))]]
+
+    def resolve_selection(self, value):
+        """Resolve a typed title to the same key supplied by autocomplete."""
+        value = value.strip()
+        if value in self.selections:
+            return value
+        kind, name = split_chart_name(value)
+        if not name:
+            raise ValueError('곡 제목을 입력해주세요.')
+        self.reload_aliases_if_changed()
+        entries = [entry for entry in self.entries if not kind or entry['value'].startswith(kind + ':')]
+        matches = {entry['value'] for entry in entries
+                   if unicodedata.normalize('NFKC', entry['title']).strip().casefold() == name.casefold()}
+        if not matches:
+            term = normalize(name)
+            matches = {entry['value'] for entry in entries if term in entry['terms']}
+        if len(matches) == 1:
+            return matches.pop()
+        if not matches:
+            raise ValueError('곡 또는 해당 채보 종류를 찾을 수 없습니다. 곡 제목을 확인해주세요.')
+        if len({key.split(':', 1)[0] for key in matches}) > 1:
+            raise ValueError('곡의 채보 종류를 지정해주세요. 예) [ST] 곡명 또는 [DX] 곡명')
+        raise ValueError('일치하는 곡이 여러 개입니다. 전체 곡 제목을 입력해주세요.')
 
     def reload_aliases_if_changed(self):
         if self.alias_path is None:

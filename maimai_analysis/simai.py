@@ -198,7 +198,7 @@ def window_at(chart: Simai, first: int) -> tuple[float, float]:
 
 
 def parse_sections(text: str, chart: Simai) -> tuple[Section, ...]:
-    parts = text.replace('\n', ',').split(',')
+    parts = re.split(r',|\n|\s+(?=(?:\d+(?:\s*개)?|나머지)\s*:)', text)
     parts = [part.strip() for part in parts if part.strip()]
     if not 1 <= len(parts) <= MAX_SECTIONS:
         raise ValueError(f'구간을 1~{MAX_SECTIONS}개 입력해주세요.')

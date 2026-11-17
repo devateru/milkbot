@@ -3,9 +3,11 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
+from io import StringIO
 import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
+from pathlib import Path
 from queue import Queue
 import re
 import subprocess
@@ -53,6 +55,16 @@ def resolve(video: Video, live: bool, height: int) -> Source:
                'socket_timeout': 10, 'extractor_retries': 1}
     runtime = os.getenv('MAIMAI_YOUTUBE_DENO')
     options['js_runtimes'] = {'deno': {'path': runtime} if runtime else {}, 'node': {}}
+    cookie_path = os.getenv('MAIMAI_YOUTUBE_COOKIES')
+    if cookie_path:
+        try:
+            cookies = Path(cookie_path).expanduser().read_text(encoding='utf-8-sig')
+        except (OSError, UnicodeError) as error:
+            raise MediaError('서버의 YouTube 인증 파일을 읽을 수 없습니다.') from error
+        if not cookies.startswith(('# Netscape HTTP Cookie File', '# HTTP Cookie File')):
+            raise MediaError('서버의 YouTube 인증 파일은 Netscape 형식이어야 합니다.')
+        # yt-dlp updates the cookie jar on close. Keep the admin's file read-only.
+        options['cookiefile'] = StringIO(cookies)
     try:
         with yt_dlp.YoutubeDL(options) as downloader:
             row = downloader.extract_info(video.url, download=False)
@@ -60,7 +72,13 @@ def resolve(video: Video, live: bool, height: int) -> Source:
         reason = re.sub(r'https?://\S+', '[URL]', str(error))
         log.warning('maimai YouTube resolve failed video=%s live=%s yt_dlp=%s: %s',
                     video.id, live, __version__, reason)
+        if 'sign in to confirm' in reason.casefold() and 'not a bot' in reason.casefold():
+            if cookie_path:
+                raise MediaError('YouTube가 로그인 확인을 요구하며 서버에 설정된 인증을 받아들이지 않았습니다.') from error
+            raise MediaError('YouTube가 이 서버에 로그인 확인을 요구합니다. 봇 관리자의 YouTube 인증 설정이 필요합니다.') from error
         raise MediaError('YouTube에서 분석 가능한 스트림을 가져오지 못했습니다.') from error
+    if cookie_path and row.get('availability') not in {'public', 'unlisted'}:
+        raise MediaError('서버의 YouTube 인증으로는 공개 또는 일부 공개 영상만 분석할 수 있습니다.')
     if row.get('is_live', False) != live:
         raise MediaError('현재 방송 중인 영상만 라이브 분석에서 열 수 있습니다.' if live else
                          '라이브 방송은 /라이브분석에서 열어주세요.')

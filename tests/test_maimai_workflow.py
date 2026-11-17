@@ -140,6 +140,37 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(YoutubeDL, 'extract_info', extract_info):
             self.assertEqual(resolve(Video(self.video, 0), False, 720).protocol, 'm3u8_native')
 
+    def test_youtube_login_challenge_reports_the_actual_cause(self):
+        from yt_dlp import YoutubeDL
+        from yt_dlp.utils import DownloadError
+
+        challenge = DownloadError('Sign in to confirm you’re not a bot.')
+        with patch.dict(os.environ, {'MAIMAI_YOUTUBE_COOKIES': ''}), \
+                patch.object(YoutubeDL, 'extract_info', side_effect=challenge), \
+                self.assertLogs('maimai_analysis.media', level='WARNING'):
+            with self.assertRaisesRegex(MediaError, 'YouTube.*로그인 확인'):
+                resolve(Video(self.video, 0), False, 720)
+
+    def test_youtube_uses_the_configured_cookie_file_without_rewriting_it(self):
+        from yt_dlp import YoutubeDL
+
+        cookies = self.store.path.with_name('test-cookies.txt')
+        contents = '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tTEST\tsynthetic\n'
+        cookies.write_text(contents, encoding='utf-8')
+        row = {'url': 'https://example.com/video.m3u8', 'protocol': 'm3u8_native', 'availability': 'public'}
+
+        def extract_info(downloader, url, download):
+            self.assertEqual(downloader.cookiejar.get_cookie_header('https://www.youtube.com/watch'), 'TEST=synthetic')
+            return row
+
+        with patch.dict(os.environ, {'MAIMAI_YOUTUBE_COOKIES': str(cookies)}), \
+                patch.object(YoutubeDL, 'extract_info', extract_info):
+            self.assertEqual(resolve(Video(self.video, 0), False, 720).protocol, 'm3u8_native')
+            self.assertEqual(cookies.read_text(encoding='utf-8'), contents)
+            row['availability'] = 'private'
+            with self.assertRaisesRegex(MediaError, '공개'):
+                resolve(Video(self.video, 0), False, 720)
+
     def test_complete_vod_hls_uses_relative_time_without_program_dates(self):
         source = Source('https://example.com/video.m3u8', {}, 110, None, 'm3u8_native')
         playlist = '#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:5.5,\na.ts\n#EXT-X-ENDLIST\n'

@@ -19,6 +19,8 @@ python bot.py
 
 YouTube 스트림을 받으려면 봇의 실행 환경에서 yt-dlp가 지원하는 Deno 또는 Node.js를 사용할 수 있게 설정합니다. Deno의 절대 경로는 `MAIMAI_YOUTUBE_DENO`로 지정할 수 있습니다. 스트림 추출이 실패하면 봇의 가상환경에서 `python -m pip install -U 'yt-dlp[default]>=2026.10.21'`을 실행한 뒤 `python -m yt_dlp --version`을 확인하고 서비스를 재시작합니다. `2026.10.21`은 Ubuntu 22.04 기본 Python 3.10에 설치되는 버전입니다. 추출 실패가 계속되면 봇 로그의 `maimai YouTube resolve failed` 줄에서 영상 ID, 사용 중인 yt-dlp 버전, YouTube의 응답을 확인합니다. [yt-dlp 런타임 설정](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
 
+YouTube가 서버에 로그인 확인을 요구하면 관리자가 YouTube 전용 Netscape 쿠키 파일을 지정할 수 있습니다. yt-dlp는 계정에 제한이 생길 수 있다고 안내하므로, 이 방식이 필요하면 본계정과 분리된 계정의 세션을 사용합니다. 파일은 봇 서비스 계정 소유로 저장소 밖에 보관하고 `chmod 600`을 적용합니다. 서버의 `.env`에 `MAIMAI_YOUTUBE_COOKIES=/home/ubuntu/.config/milkbot/youtube-cookies.txt`처럼 파일 경로를 설정하고 봇을 재시작합니다. 로그인 확인이 계속되면 YouTube가 그 서버에서 해당 세션을 받아들이는지 확인해야 합니다. [yt-dlp의 YouTube 인증 안내](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies)
+
 | 환경 변수 | 기본값 | 용도 |
 | --- | --- | --- |
 | `MAIMAI_ANALYSIS_DB` | `data/maimai-analysis.sqlite3` | 재시작 후에도 유지되는 파일 경로 |

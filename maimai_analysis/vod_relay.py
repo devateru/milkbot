@@ -1,4 +1,4 @@
-"""Read YouTube VOD frames on a PC through a loopback-only SSH forward."""
+"""Read YouTube frames on a PC through a loopback-only SSH forward."""
 
 from contextlib import closing
 from functools import lru_cache
@@ -10,7 +10,7 @@ import logging
 import math
 import os
 from struct import Struct
-from threading import Lock
+from threading import BoundedSemaphore, Lock
 import time
 from urllib.parse import parse_qs, urlsplit
 import zlib
@@ -24,13 +24,25 @@ from .youtube import VIDEO_ID, Video
 
 log = logging.getLogger(__name__)
 PROTOCOL = 'vod-relay'
-PACKET = Struct('!dI')
-TIMEOUT = (3, 50)
+PACKET = Struct('!ddBI')
+TIMEOUT = (3, 55)
+VOD_WINDOW = 120
+
+
+def relay_error(response, default):
+    if response.headers.get('Content-Type') == 'application/json':
+        try:
+            message = response.json()['error']
+            if isinstance(message, str):
+                return MediaError(message)
+        except (ValueError, TypeError, KeyError):
+            pass
+    return MediaError(default)
 
 
 def resolve_for_bot(video, live, height):
     port = os.getenv('MAIMAI_VOD_RELAY_PORT')
-    if live or not port:
+    if not port:
         return resolve(video, live, height)
     token = os.getenv('MAIMAI_VOD_RELAY_TOKEN')
     if not token:
@@ -38,65 +50,97 @@ def resolve_for_bot(video, live, height):
     url = f'http://127.0.0.1:{int(port)}/video/{video.id}'
     headers = {'Authorization': f'Bearer {token}'}
     try:
-        response = requests.get(url, headers=headers, params={'height': height}, timeout=TIMEOUT,
+        response = requests.get(url, headers=headers, params={'height': height, 'live': int(live)}, timeout=TIMEOUT,
                                 allow_redirects=False)
     except requests.RequestException:
         log.warning('maimai Windows VOD relay unavailable video=%s', video.id)
         try:
             return resolve(video, live, height)
         except MediaError as problem:
-            raise MediaError(f'{problem} Windows PC의 다시보기 연결도 확인할 수 없습니다.') from problem
+            raise MediaError(f'{problem} Windows PC의 영상 연결도 확인할 수 없습니다.') from problem
     if response.status_code == 401:
         raise MediaError('Windows PC 영상 연결의 인증 설정을 확인해주세요.')
     if response.status_code != 200:
-        raise MediaError('Windows PC에서도 YouTube 다시보기를 열 수 없습니다.')
+        raise relay_error(response, 'Windows PC에서도 YouTube 영상을 열 수 없습니다.')
     try:
-        duration = float(response.json()['duration'])
+        metadata = response.json()
+        timing = float(metadata['epoch' if live else 'duration'])
     except (ValueError, TypeError, KeyError) as problem:
         raise MediaError('Windows PC에서 돌아온 영상 길이를 확인할 수 없습니다.') from problem
-    if not math.isfinite(duration) or duration <= 0:
+    if not math.isfinite(timing) or timing <= 0:
         raise MediaError('Windows PC에서 돌아온 영상 길이를 확인할 수 없습니다.')
-    return Source(url, headers, duration, None, PROTOCOL)
+    return Source(url, headers, None if live else timing, timing if live else None, PROTOCOL)
 
 
-def read_frames(source, start, end, width, height, fps):
+def read_frames(source, start, end, width, height, fps, *, live=False):
     frame_size = width * height
-    params = {'start': start, 'end': end if end is not None else source.duration,
-              'width': width, 'height': height, 'fps': fps}
+    params = {'start': start, 'end': end, 'width': width, 'height': height, 'fps': fps, 'live': int(live)}
     try:
         with requests.get(source.url + '/frames', headers=source.headers, params=params,
                           timeout=TIMEOUT, allow_redirects=False, stream=True) as response:
             if response.status_code != 200:
-                raise MediaError('Windows PC에서 다시보기 프레임을 읽지 못했습니다.')
+                raise relay_error(response, 'Windows PC에서 영상 프레임을 읽지 못했습니다.')
             while header := response.raw.read(PACKET.size):
                 if len(header) != PACKET.size:
                     break
-                timestamp, length = PACKET.unpack(header)
+                timestamp, epoch, discontinuity, length = PACKET.unpack(header)
                 if not length:
                     return
-                if length > frame_size + 65536 or not math.isfinite(timestamp):
+                if length > frame_size + 65536 or not math.isfinite(timestamp) or not math.isfinite(epoch):
                     break
                 zipped = zlib.decompressobj()
                 frame = zipped.decompress(response.raw.read(length), frame_size + 1)
                 if len(frame) != frame_size or not zipped.eof:
                     break
-                yield Image(timestamp, frame)
+                yield Image(timestamp, frame, epoch or None, bool(discontinuity))
     except (requests.RequestException, HTTPError, OSError, zlib.error) as problem:
-        raise MediaError('Windows PC에서 다시보기 프레임을 받다가 연결이 끊겼습니다.') from problem
-    raise MediaError('Windows PC에서 다시보기 프레임을 끝까지 받지 못했습니다.')
+        raise MediaError('Windows PC에서 영상 프레임을 받다가 연결이 끊겼습니다.') from problem
+    raise MediaError('Windows PC에서 영상 프레임을 끝까지 받지 못했습니다.')
+
+
+def read_vod_frames(source, start, end, width, height, fps):
+    end = source.duration if end is None else end
+    last = float('-inf')
+    while start < end:
+        boundary = min(start + VOD_WINDOW, end)
+        cursor = start
+        for attempt in range(3):
+            try:
+                with closing(read_frames(source, cursor, boundary, width, height, fps)) as frames:
+                    for frame in frames:
+                        if frame.time > last:
+                            last = frame.time
+                            cursor = min(last, math.nextafter(boundary, start))
+                            yield frame
+                if last < boundary - max(.15, 2 / fps):
+                    raise MediaError('Windows PC에서 요청한 구간의 마지막 프레임을 받지 못했습니다.')
+                break
+            except MediaError as problem:
+                log.warning('maimai Windows VOD relay interrupted position=%.3f attempt=%d', cursor, attempt + 1)
+                if attempt == 2:
+                    raise MediaError(f'{problem} 영상 시각 {cursor:.1f}초에서 재시도를 완료하지 못했습니다.') from problem
+                time.sleep(2)
+        start = boundary
 
 
 def serve(port, token):
     authorization = f'Bearer {token}'.encode()
     stream_lock = Lock()
+    live_slots = BoundedSemaphore(8)
 
     @lru_cache(maxsize=8)
-    def lookup(video_id, height, slot):
-        return resolve(Video(video_id, 0), False, height)
+    def lookup(video_id, live, height, slot):
+        return resolve(Video(video_id, 0), live, height)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
             pass
+
+        def send_json(self, status, data):
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(data).encode())
 
         def do_GET(self):
             if not compare_digest(self.headers.get('Authorization', '').encode(), authorization):
@@ -111,41 +155,47 @@ def serve(port, token):
             query = parse_qs(parts.query)
             try:
                 height = int(query['height'][0])
+                live = query.get('live', ['0'])[0] == '1'
                 if not 180 <= height <= 1080:
                     raise ValueError
                 if len(route) == 4:
                     width, fps = (int(query[name][0]) for name in ('width', 'fps'))
-                    start, end = (float(query[name][0]) for name in ('start', 'end'))
-                    if not (320 <= width <= 1920 and 2 <= fps <= 30 and 0 <= start < end < math.inf):
+                    start = float(query['start'][0]) if 'start' in query else None
+                    end = None if live else float(query['end'][0])
+                    if (not (320 <= width <= 1920 and 2 <= fps <= 30)
+                            or (start is not None and not 0 <= start < math.inf)
+                            or (not live and (start is None or not start < end < math.inf))):
                         raise ValueError
             except (ValueError, KeyError):
                 self.send_error(400)
                 return
             try:
-                source = lookup(route[2], height, int(time.monotonic() // 900))
-                if not source.duration:
+                source = lookup(route[2], live, height, int(time.monotonic() // 900))
+                if not (source.epoch if live else source.duration):
                     raise MediaError('YouTube 다시보기의 영상 길이를 확인하지 못했습니다.')
-            except (MediaError, requests.RequestException):
+            except MediaError as problem:
+                self.send_json(502, {'error': str(problem)})
+                return
+            except requests.RequestException:
                 self.send_error(502)
                 return
             if len(route) == 3:
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'duration': source.duration}).encode())
+                self.send_json(200, {'duration': source.duration, 'epoch': source.epoch})
                 return
-            if not stream_lock.acquire(blocking=False):
+            slot = live_slots if live else stream_lock
+            if not slot.acquire(blocking=False):
                 self.send_error(503)
                 return
             try:
-                self.stream(source, start, end, width, height, fps)
+                self.stream(source, start, end, width, height, fps, live)
             finally:
-                stream_lock.release()
+                slot.release()
 
-        def stream(self, source, start, end, width, height, fps):
+        def stream(self, source, start, end, width, height, fps, live):
             started = False
+            decoder = Decoder(width=width, height=height, fps=fps)
             try:
-                with closing(Decoder(width=width, height=height, fps=fps).vod(source, start, end)) as frames:
+                with closing(decoder.live(source, start) if live else decoder.vod(source, start, end)) as frames:
                     first = next(frames, None)
                     if first is None:
                         self.send_error(502)
@@ -156,14 +206,19 @@ def serve(port, token):
                     started = True
                     for frame in chain((first,), frames):
                         data = zlib.compress(frame.pixels, 1)
-                        self.wfile.write(PACKET.pack(frame.time, len(data)) + data)
-                    self.wfile.write(PACKET.pack(0, 0))
+                        self.wfile.write(PACKET.pack(frame.time, frame.epoch or 0, frame.discontinuity, len(data))
+                                         + data)
+                    self.wfile.write(PACKET.pack(0, 0, 0, 0))
             except OSError:
                 return
             except (MediaError, requests.RequestException) as problem:
+                lookup.cache_clear()
                 log.warning('maimai Windows VOD relay decode failed: %s', type(problem).__name__)
                 if not started:
-                    self.send_error(502)
+                    if isinstance(problem, MediaError):
+                        self.send_json(502, {'error': str(problem)})
+                    else:
+                        self.send_error(502)
 
     return ThreadingHTTPServer(('127.0.0.1', port), Handler)
 

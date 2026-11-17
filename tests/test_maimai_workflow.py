@@ -126,6 +126,22 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([round(frame.time, 3) for frame in frames], [0.5, 0.75, 1, 1.25])
         self.assertTrue(all(len(frame.pixels) == 320 * 180 for frame in frames))
 
+    def test_ffmpeg_stops_when_no_frames_arrive(self):
+        from io import BytesIO
+
+        stopped = Event()
+        process = Mock(stderr=BytesIO())
+        process.stdout.read.side_effect = lambda _size: stopped.wait(3) and b''
+        process.kill.side_effect = stopped.set
+        process.poll.side_effect = lambda: 1 if stopped.is_set() else None
+        decoder = Decoder(width=320, height=180)
+        with patch('maimai_analysis.media.subprocess.Popen', return_value=process), \
+                patch('maimai_analysis.media.passthrough_option', return_value=()), \
+                patch('maimai_analysis.media.FRAME_TIMEOUT', .05):
+            with self.assertRaisesRegex(MediaError, 'FFmpeg.*프레임'):
+                list(decoder.frames('dummy.mp4', 0))
+        process.kill.assert_called_once()
+
     def test_resolve_prefers_seekable_vod_hls_with_video_only_variant(self):
         from yt_dlp import YoutubeDL
 

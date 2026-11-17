@@ -1,6 +1,6 @@
 """Bounded YouTube HTTP reads and timestamped FFmpeg grayscale samples."""
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from io import StringIO
@@ -11,7 +11,7 @@ from pathlib import Path
 from queue import Queue
 import re
 import subprocess
-from threading import Thread
+from threading import Condition, Thread
 import time
 from urllib.parse import urlsplit
 
@@ -20,6 +20,7 @@ from .youtube import Video, parse_hls
 log = logging.getLogger(__name__)
 RANGE_SIZE = 4 * 1024 * 1024
 HTTP_TIMEOUT = (6, 10)
+FRAME_TIMEOUT = 30
 PTS = re.compile(rb'\bn:\s*\d+\s+pts:\s*-?\d+\s+pts_time:([\d.eE+-]+)')
 
 
@@ -175,6 +176,9 @@ class Decoder:
             raise MediaError('FFmpeg 실행 파일을 찾지 못했습니다.') from error
         timestamps = Queue()
         failure = []
+        guard = Condition()
+        deadline = None
+        halted = timed_out = False
 
         def read_timestamps():
             for line in process.stderr:
@@ -186,10 +190,36 @@ class Decoder:
 
         logs = Thread(target=read_timestamps, daemon=True)
         logs.start()
+
+        def guard_frames():
+            nonlocal timed_out
+            with guard:
+                while not halted:
+                    remaining = None if deadline is None else deadline - time.monotonic()
+                    if remaining is not None and remaining <= 0:
+                        timed_out = True
+                        if process.poll() is None:
+                            process.kill()
+                        return
+                    guard.wait(remaining)
+
+        watchdog = Thread(target=guard_frames, daemon=True)
+        watchdog.start()
         count = 0
         try:
             frame_size = self.width * self.height
-            while (data := process.stdout.read(frame_size)) and len(data) == frame_size:
+            while True:
+                with guard:
+                    deadline = time.monotonic() + FRAME_TIMEOUT
+                    guard.notify()
+                data = process.stdout.read(frame_size)
+                with guard:
+                    deadline = None
+                    guard.notify()
+                    if timed_out:
+                        raise MediaError('FFmpeg에서 제한 시간 안에 영상 프레임을 읽지 못했습니다.')
+                if len(data) != frame_size:
+                    break
                 pts = timestamps.get(timeout=15)
                 if pts is None:
                     raise MediaError('FFmpeg 프레임의 영상 시각이 누락되었습니다.')
@@ -198,6 +228,10 @@ class Decoder:
             if process.wait(timeout=15) or not count or failure:
                 raise MediaError('FFmpeg에서 영상 프레임을 읽지 못했거나 프레임 손상이 감지되었습니다.')
         finally:
+            with guard:
+                halted = True
+                guard.notify()
+            watchdog.join()
             if process.poll() is None:
                 process.kill()
                 process.wait()
@@ -210,9 +244,9 @@ class Decoder:
             raise MediaError('분석할 시작 시간이 영상 길이를 벗어납니다.')
         end = min(end, source.duration) if end is not None and source.duration else end
         if source.protocol == 'vod-relay':
-            from .vod_relay import read_frames
+            from .vod_relay import read_vod_frames
 
-            yield from read_frames(source, start, end, self.width, self.height, fps or self.fps)
+            yield from read_vod_frames(source, start, end, self.width, self.height, fps or self.fps)
             return
         length = end - start if end is not None else None
         if source.protocol.startswith('m3u8'):
@@ -236,6 +270,22 @@ class Decoder:
 
     def live(self, source, requested, *, stop=None, busy=None):
         import requests
+
+        if source.protocol == 'vod-relay':
+            from .vod_relay import read_frames
+
+            with closing(read_frames(source, requested, None, self.width, self.height, self.fps, live=True)) as frames:
+                for image in frames:
+                    if stop is not None and stop.is_set():
+                        return
+                    if busy is not None:
+                        busy.set()
+                    try:
+                        yield image
+                    finally:
+                        if busy is not None:
+                            busy.clear()
+            return
 
         with requests.Session() as session:
             sequence = last_end = None

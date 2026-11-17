@@ -75,7 +75,8 @@ class FeedbackTests(unittest.TestCase):
         plate[3:9, 35:41] = 70  # End of the regular OCR prefix.
         plate[:, 41:] = glyphs
         engine = Mock()
-        engine.read.side_effect = lambda crop, *_: Reading('Other', 95) if crop.shape[1] >= 260 else Reading('Paste', 95)
+        engine.read.side_effect = lambda crop, *_: (
+            Reading('Other', 95) if crop.shape[1] > 3.5 * crop.shape[0] else Reading('Paste', 95))
         for make_view in (lambda: Vision(1280, 720, ocr=engine),
                           lambda: CabinetVision(1280, 720, 'left', engine),
                           lambda: CabinetVision(1280, 720, 'right', engine)):

@@ -390,9 +390,9 @@ class Vision:
         fields = [split, (crop, '')] if split else [(crop, '')]
         for field, suffix in fields:
             key = 'nameplate_prefix' if suffix else 'nameplate'
-            thresholds = (175, 210) if suffix else (210, 230)
+            variants = ((200, 5), (210, 6)) if suffix else ((210, 4), (230, 4))
             readings = [self.read_crop(field, key, 8, scale=4),
-                        *(self.read_crop(field, key, 7, threshold=level, scale=4) for level in thresholds)]
+                        *(self.read_crop(field, key, 7, threshold=level, scale=scale) for level, scale in variants)]
             confident = [reading for reading in readings if reading.confidence >= 80 and reading.text]
             if len(confident) >= 2 and len({identity_key(reading.text) for reading in confident}) == 1:
                 best = max(confident, key=lambda result: result.confidence)

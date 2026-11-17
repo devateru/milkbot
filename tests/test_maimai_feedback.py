@@ -69,7 +69,7 @@ class FeedbackTests(unittest.TestCase):
         import cv2
         import numpy as np
 
-        with Image.open(Path(__file__).parent / 'fixtures' / 'maimai-name-symbols.pgm') as fixture:
+        with Image.open(Path(__file__).parent / 'fixtures' / 'maimai-name-symbols.png') as fixture:
             glyphs = np.asarray(fixture)
         plate = np.full((13, 69), 255, dtype=np.uint8)
         plate[3:9, 35:41] = 70  # End of the regular OCR prefix.

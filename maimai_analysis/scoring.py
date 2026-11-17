@@ -32,7 +32,7 @@ class Result:
 def score_point(samples, chart, boundary, origin, end, guard):
     after, before = window_at(chart, boundary)
     low = origin + after + guard if math.isfinite(after) else origin + before - END_SAMPLE_WINDOW
-    high = origin + before - guard if math.isfinite(before) else min(end, origin + after + END_SAMPLE_WINDOW)
+    high = min(end, origin + before - guard if math.isfinite(before) else origin + after + END_SAMPLE_WINDOW)
     rows = [(s.time, value) for s, value in samples if low <= s.time <= high]
     if not rows:
         return None
@@ -49,6 +49,8 @@ def evaluate(chart: Simai, sections: tuple[Section, ...], samples: list[Sample],
     weights = calculate_note_scores(chart.counts)['per_note']
     values = {'+': [], '-': []}
     for sample in sorted(samples, key=lambda s: s.time):
+        if any(a < sample.time < b for a, b in gaps):
+            continue
         value = Decimal(sample.value)
         if sample.mode in values and value.is_finite() and 0 <= value <= 101:
             values[sample.mode].append((sample, value))
@@ -78,28 +80,33 @@ def evaluate(chart: Simai, sections: tuple[Section, ...], samples: list[Sample],
         perfect = Decimal(theoretical.numerator) / Decimal(theoretical.denominator)
         loss = None
         evaluation_end = starts[i + 1] if i + 1 < len(starts) else end
-        if not any(a < evaluation_end and b > start - guard for a, b in gaps):
-            for mode in ('-', '+'):
-                mode_samples = values[mode]
-                a = score_point(mode_samples, chart, s.first, origin, end, guard)
-                b = score_point(mode_samples, chart, s.last + 1, origin, end, guard)
-                if a is None or b is None:
-                    continue
-                interior = [v for sample, v in mode_samples if start <= sample.time < evaluation_end]
-                sequence = [a, *interior, b]
-                if any((right - left if mode == '+' else left - right) < -DISPLAY_UNIT
-                       for left, right in zip(sequence, sequence[1:])):
-                    continue
-                delta = b - a
-                signed_gain = delta if mode == '+' else -delta
-                if not -DISPLAY_UNIT <= signed_gain <= perfect + DISPLAY_UNIT:
-                    continue
-                loss = (perfect - delta if mode == '+' else -delta).quantize(
-                    DISPLAY_UNIT, rounding=ROUND_HALF_UP)
-                loss = max(Decimal('0.0000'), loss)
-                break
+        # Cumulative HUD values at both boundaries account for the whole section,
+        # even if no intermediate frames arrived.
+        for mode in ('-', '+'):
+            mode_samples = values[mode]
+            a = score_point(mode_samples, chart, s.first, origin, end, guard)
+            b = score_point(mode_samples, chart, s.last + 1, origin, end, guard)
+            if a is None or b is None:
+                continue
+            interior = [v for sample, v in mode_samples if start <= sample.time < evaluation_end]
+            sequence = [a, *interior, b]
+            if any((right - left if mode == '+' else left - right) < -DISPLAY_UNIT
+                   for left, right in zip(sequence, sequence[1:])):
+                continue
+            delta = b - a
+            signed_gain = delta if mode == '+' else -delta
+            if not -DISPLAY_UNIT <= signed_gain <= perfect + DISPLAY_UNIT:
+                continue
+            loss = (perfect - delta if mode == '+' else -delta).quantize(
+                DISPLAY_UNIT, rounding=ROUND_HALF_UP)
+            loss = max(Decimal('0.0000'), loss)
+            break
         limit = -Decimal(s.allowance)
-        if loss is None or (loss != 0 and abs(loss - limit) <= DISPLAY_UNIT):
+        boundary_after, _ = window_at(chart, s.first)
+        baseline_start = origin + boundary_after + guard if math.isfinite(boundary_after) else start - END_SAMPLE_WINDOW
+        if loss is None and any(a <= evaluation_end and b >= baseline_start for a, b in gaps):
+            status = 'lost'
+        elif loss is None or (loss != 0 and abs(loss - limit) <= DISPLAY_UNIT):
             status = 'uncertain'
         else:
             status = 'passed' if loss <= limit else 'failed'

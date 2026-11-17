@@ -16,7 +16,7 @@ from .youtube import video_link
 SEOUL = ZoneInfo('Asia/Seoul')
 log = logging.getLogger(__name__)
 STATUSES = {'passed': '목표 달성', 'failed': '목표 미달성', 'skip-failed': '목표 미달성 (중도 스킵)',
-            'skipped': '해당 구간 스킵됨', 'uncertain': '분석 불확실'}
+            'skipped': '해당 구간 스킵됨', 'uncertain': '분석 불확실', 'lost': '영상 유실로 분석 불가'}
 
 
 def video_clock(seconds):
@@ -51,6 +51,8 @@ def detail_embeds(video, play, results):
         blocks.append(f'중도 스킵 [(&t={int(play.end)})]({video_link(video, play.end)})')
     if play.status in {'interrupted', 'uncertain'}:
         blocks.append('영상 유실 또는 종료 표식 누락으로 분석 불확실')
+    elif play.gaps:
+        blocks.append('영상 일부 유실 · 판정 가능한 구간의 결과를 표시합니다.')
     for i, item in enumerate(results, 1):
         section = item.section
         value = f'구간 {i} ({section.first}~{section.last}) 목표 {section.allowance}%'
@@ -150,6 +152,8 @@ class Delivery:
             line = f'{label} ([&t={int(play.start)}]({video_link(job.video, play.start)}))'
             if play.status in {'interrupted', 'uncertain'}:
                 line += ' · 종료 확인 불가'
+            if play.gaps:
+                line += ' · 영상 일부 유실'
             if detail := job.reports.get(play_key(play)):
                 line += f' · [구간 결과](https://discord.com/channels/@me/{channel.id}/{detail})'
             blocks.append(line)

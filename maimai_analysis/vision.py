@@ -400,11 +400,12 @@ class Vision:
 
     def inspect(self, image, tracker, live=False):
         timestamp = image.time
-        if image.discontinuity:
+        frame = Frame(timestamp, epoch=image.epoch, gap=image.discontinuity)
+        recovering = live and tracker.checking_resume(frame)
+        if image.discontinuity and not recovering:
             self.reset()
         img = self.np.frombuffer(image.pixels, self.np.uint8).reshape(self.height, self.width)
         active = tracker.active is not None
-        frame = Frame(timestamp, epoch=image.epoch, gap=image.discontinuity)
         if self.gameplay(img):
             if self.play_votes == 0:
                 self.first_play_frame = timestamp
@@ -418,12 +419,14 @@ class Vision:
                 if live and (capture := self.capture_epoch(img)) is not None:
                     frame = replace(frame, epoch=capture)
             origin = self.play_start + float(self.origin_offset) if first and self.origin_offset is not None else None
-            if not active or tracker.active.chart is None:
+            if recovering or not active or tracker.active.chart is None:
                 if timestamp - self.last_field >= 0.7:
                     self.last_field = timestamp
                     title, kind, difficulty = self.metadata(img)
                     frame = replace(frame, title=title, kind=kind, difficulty=difficulty)
-            if self.needs_name(tracker) and (tracker.ready_pending or active) and (
+                    if recovering:
+                        frame = self.named(frame, img, self.player_name(img), self.track_number(img))
+            if not recovering and self.needs_name(tracker) and (tracker.ready_pending or active) and (
                     timestamp - self.play_start <= 5 and timestamp - self.last_name >= 0.35):
                 self.last_name = timestamp
                 frame = self.named(frame, img, self.player_name(img), self.track_number(img))
@@ -478,7 +481,7 @@ class Vision:
                 difficulty = DIFFICULTY.search(header)
                 if difficulty:
                     phase = 'ready'
-        if not active and phase in {'ready', 'profile', 'result', 'idle', 'credit_end'}:
+        if (not active or recovering) and phase in {'ready', 'profile', 'result', 'idle', 'credit_end'}:
             self.play_start = None
             self.play_votes = 0
             self.loss_of_play = None
@@ -529,29 +532,32 @@ class CabinetVision(Vision):
 
     def inspect(self, image, tracker, live=False):
         timestamp = image.time
-        if image.discontinuity:
+        frame = Frame(timestamp, epoch=image.epoch, gap=image.discontinuity)
+        recovering = live and tracker.checking_resume(frame)
+        if image.discontinuity and not recovering:
             self.reset()
         img = self.np.frombuffer(image.pixels, self.np.uint8).reshape(self.height, self.width)
-        frame = Frame(timestamp, epoch=image.epoch, gap=image.discontinuity)
         active = tracker.active is not None
         if self.hud_visible(img):
             self.blank_since = self.loss_of_play = None
             first = self.play_start is None
-            if first or (timestamp - self.last_field >= 0.55 and (not active or not tracker.active.chart)):
+            if first or (timestamp - self.last_field >= 0.55 and (recovering or not active or not tracker.active.chart)):
                 self.last_field = timestamp
                 title, kind, difficulty = self.metadata(img, cabinet_only=True)
                 if first and not difficulty:
                     return frame
                 frame = replace(frame, title=title, kind=kind, difficulty=difficulty)
+                if recovering:
+                    frame = self.named(frame, img, self.player_name(img), self.track_number(img))
             if first:
                 self.play_start = timestamp
-            if (first or self.needs_name(tracker)) and (
+            if not recovering and (first or self.needs_name(tracker)) and (
                     timestamp - self.play_start <= 5 and timestamp - self.last_name >= 0.35):
                 self.last_name = timestamp
                 track = self.track_number(img)
                 frame = (self.named(frame, img, self.player_name(img), track)
                          if track == 1 or self.needs_name(tracker) else replace(frame, track=track))
-                if first and frame.track and not tracker.ready_pending and tracker.previous is not None:
+                if first and not active and frame.track and not tracker.ready_pending and tracker.previous is not None:
                     return replace(frame, phase='ready')
             samples = ()
             if tracker.accepts_score(frame):

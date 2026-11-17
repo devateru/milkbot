@@ -404,20 +404,20 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(abandoned.is_set())
         self.assertIsNone(service.current)
 
-    def test_live_reconnect_resumes_from_last_frame_and_marks_gap(self):
+    def test_live_reconnect_jumps_to_live_edge_and_marks_gap(self):
         def disconnect():
             yield VideoFrame(120, b'', 1700000120)
             raise MediaError('temporary failure')
 
         decoder = Mock(width=640, height=360, fps=8)
         decoder.live.side_effect = [disconnect(), (frame for frame in [
-            VideoFrame(120, b'', 1700000120), VideoFrame(123, b'', 1700000123)])]
+            VideoFrame(120, b'', 1700000120), VideoFrame(120.125, b'', 1700000120.125)])]
         service = AnalysisService(self.store, lambda: None, AsyncMock(), decoder=decoder,
                                   resolve_source=Mock(return_value=Mock()))
         stop = Mock(is_set=Mock(return_value=False))
-        result = list(service.live_frames(self.video, None, None, stop))
-        self.assertEqual([(frame.time, frame.discontinuity) for frame in result], [(120, False), (123, True)])
-        self.assertEqual(decoder.live.call_args.args[1], 120)
+        result = list(service.live_frames(self.video, None, 119, stop))
+        self.assertEqual([(frame.time, frame.discontinuity) for frame in result], [(120, False), (120.125, True)])
+        self.assertEqual([call.args[1] for call in decoder.live.call_args_list], [119, None])
 
     def test_late_dvr_uses_verified_broadcast_start(self):
         from datetime import datetime, timezone
@@ -434,6 +434,26 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
                 list(decoder.live(unverified, None))
             source = Source(response.url, {}, None, origin, 'm3u8', actual_epoch=origin)
             self.assertEqual([frame.time for frame in decoder.live(source, None)], [60])
+
+    def test_slow_live_decoder_jumps_to_latest_segment(self):
+        from datetime import datetime, timezone
+
+        origin = 1700000000
+        stamp = datetime.fromtimestamp(origin, timezone.utc).isoformat()
+        url = 'https://example.com/live.m3u8'
+        manifest = f'#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PROGRAM-DATE-TIME:{stamp}\n'
+        segments = ''.join(f'#EXTINF:6,\n{seq}.ts\n' for seq in range(4))
+        source = Source(url, {}, None, origin, 'm3u8')
+        decoder = Decoder()
+        for start, expected in [(None, [(0, False), (18, True)]),
+                                (0, [(0, False), (6, False), (12, False), (18, False)])]:
+            with patch('requests.Session.get', side_effect=[
+                    Mock(text=manifest + '#EXTINF:6,\n0.ts\n', url=url),
+                    Mock(text=manifest + segments + '#EXT-X-ENDLIST', url=url)]), \
+                    patch('maimai_analysis.media.time.sleep'), \
+                    patch.object(decoder, 'frames', side_effect=lambda _, t, *args, **kw:
+                                 iter([VideoFrame(t, b'', kw['epoch'])])):
+                self.assertEqual([(f.time, f.discontinuity) for f in decoder.live(source, start)], expected)
 
     async def test_vod_shares_inflight_decoder_and_rescans_on_new_command(self):
         index = SongLookup([{'title': 'Credits', 'artist': 'Frums',
@@ -511,7 +531,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         play = Play(self.chart, 'Milk', 95, 10, 12.6, 10, 'finished', [
             Sample(10, '-', '100'), Sample(11.25, '-', '100'),
             Sample(11.75, '-', '99.8260'), Sample(12.25, '-', '99.8260')
-        ])
+        ], gaps=[(10.1, 10.8)])
         self.store.save_target(1, self.chart.key, self.cached, parse_sections('1:-.1,3:-.1', self.simai))
         await delivery.waiting(job)
         await delivery.started(job, play)
@@ -524,4 +544,6 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
                       log.output[0])
         self.assertEqual(str(sent[0].id), job.reports[play_key(play)])
         self.assertEqual(sent[0].edit.await_count, 2)
-        self.assertNotIn('미달성', sent[0].edit.call_args.kwargs['embed'].description)
+        description = sent[0].edit.call_args.kwargs['embed'].description
+        self.assertIn('영상 일부 유실', description)
+        self.assertEqual(description.count('목표 달성'), 2)

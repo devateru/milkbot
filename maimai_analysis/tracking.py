@@ -5,6 +5,10 @@ import unicodedata
 
 from .scoring import Sample
 
+# A much longer jump can hide an entire transition, even with matching HUD text.
+MAX_RESUME_GAP = 20
+RESUME_CHECK_SECONDS = 2
+
 
 def identity_name(name: str) -> str:
     return unicodedata.normalize('NFKC', name).strip()
@@ -86,6 +90,7 @@ class Tracker:
         self.last_phase = None
         self.ready_pending = False
         self.waiting_since = None
+        self.resume_until = None
         self.guest = False
         self.guest_evidence = False
 
@@ -99,19 +104,55 @@ class Tracker:
         play = self.active
         return bool(play and play.chart and self.targeted(play))
 
+    def has_gap(self, frame):
+        return frame.gap or (self.previous is not None and frame.time - self.previous > 1.25)
+
+    def checking_resume(self, frame):
+        return self.active is not None and (self.resume_until is not None or self.has_gap(frame))
+
     def finish(self, time, status, epoch=None, score=None):
         play, self.active = self.active, None
         if play:
+            if self.resume_until is not None:
+                time = play.gaps[-1][0]
             play.end, play.status, play.end_epoch = max(play.start, time), status, epoch
             play.final_score = score
+        self.resume_until = None
         return play
 
-    def feed(self, frame: Frame) -> tuple[Play | None, Play | None]:
+    def feed(self, frame: Frame, *, live=False) -> tuple[Play | None, Play | None]:
         complete = start = None
-        if frame.gap or (self.previous is not None and frame.time - self.previous > 1.25):
+        gap = self.has_gap(frame)
+        if live and self.checking_resume(frame):
+            play = self.active
+            if self.resume_until is None:
+                self.resume_until = frame.time + RESUME_CHECK_SECONDS
+                play.gaps.append((self.previous if self.previous is not None else play.start, frame.time))
+            before, _ = play.gaps[-1]
+            play.gaps[-1] = (before, frame.time)
+            playing = frame.phase in {'start', 'playing'}
+            chart = self.resolve(frame) if playing else None
+            name = identity_key(frame.nickname) if frame.confidence >= 80 else None
+            prior_name = identity_key(play.nickname)
+            same_name = name is not None and name == prior_name and name != 'guest'
+            tracks_known = frame.track is not None and self.last_track is not None
+            conflict = ((chart and chart != play.chart) or (name and prior_name and name != prior_name) or
+                        (tracks_known and frame.track != self.last_track))
+            plausible = not conflict and frame.time - before <= MAX_RESUME_GAP
+            if plausible and chart and (same_name or tracks_known):
+                self.resume_until = None
+                gap = False
+            elif plausible and (playing or frame.phase == 'unknown') and frame.time < self.resume_until:
+                self.previous = frame.time
+                return None, None
+            else:
+                complete = self.finish(frame.time, 'interrupted')
+                gap = True
+        if gap:
             if self.active:
-                self.active.gaps.append((self.previous or self.active.start, frame.time))
-                complete = self.finish(self.previous or self.active.start, 'interrupted')
+                before = self.previous if self.previous is not None else self.active.start
+                self.active.gaps.append((before, frame.time))
+                complete = self.finish(before, 'interrupted')
             self.reset_identity()
             self.ready = None
             self.ready_pending = False
@@ -171,7 +212,7 @@ class Tracker:
                 self.ready_pending = False
             if self.active:
                 self.active.chart = self.active.chart or self.resolve(frame)
-                if frame.origin is not None and self.active.origin is None:
+                if frame.origin is not None and self.active.origin is None and not self.active.gaps:
                     self.active.origin, self.active.timing_error = frame.origin, frame.timing_error
                 if self.accepts_score(frame):
                     self.active.samples.extend(frame.samples)
@@ -184,7 +225,7 @@ class Tracker:
                                    'skipped' if frame.phase == 'skip' else 'finished',
                                    frame.end_epoch if frame.end_epoch is not None else frame.epoch,
                                    frame.final_score) or complete
-            if complete:
+            if complete and complete.status in {'finished', 'skipped'}:
                 complete.result_epoch = frame.result_epoch
             self.ready = None
             self.ready_pending = False

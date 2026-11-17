@@ -238,7 +238,7 @@ class AnalysisService:
                             return
                         if last is not None and image.time <= last:
                             continue
-                        if attempts and last is not None and image.time - last > max(.35, 2 / self.decoder.fps):
+                        if attempts and last is not None:
                             image = replace(image, discontinuity=True)
                         last, attempts = image.time, 0
                         yield image
@@ -249,7 +249,8 @@ class AnalysisService:
                 if attempts >= 2 or (isinstance(problem, DVRRangeError) and last is None):
                     raise
                 attempts += 1
-                start = None if isinstance(problem, DVRRangeError) else last if last is not None else start
+                if last is not None:
+                    start = None
                 source = None
                 log.warning('maimai live reconnect video=%s from=%s attempt=%d', video, start, attempts)
                 stop.wait(1)
@@ -320,8 +321,8 @@ class AnalysisService:
                     if frame is None and tracker.previous is None:
                         continue
                     if frame is None:
-                        frame = Frame(last, 'credit_end')
-                    started, completed = tracker.feed(frame)
+                        frame = Frame(last, 'credit_end', gap=image.discontinuity)
+                    started, completed = tracker.feed(frame, live=live)
                     if completed:
                         finish(completed, received)
                     if started:
@@ -347,6 +348,12 @@ class AnalysisService:
                     log.info('maimai resources video=%s live=%d position=%.3f frames=%d cpu_pct=%.1f rss_mib=%.1f',
                              video, live, last, count, 100 * max(0, new_cpu - cpu) / (now - measured_at), rss)
                     measured_at, cpu = now, new_cpu
+        except (MediaError, RequestException, TimeoutError):
+            if live and last is not None:
+                for tracker in trackers.values():
+                    if tracker.active and tracker.resume_until is None:
+                        tracker.active.gaps.append((last, last))
+            raise
         finally:
             frames.close()
             vision.close()
@@ -371,7 +378,7 @@ class AnalysisService:
 
     async def send_play(self, job, play):
         await self.deliver(job, self.delivery.finished, play)
-        job.plays.append(replace(play, samples=[], judgments=[], gaps=[]))
+        job.plays.append(replace(play, samples=[], judgments=[]))
 
     async def run_live(self, video):
         run = self.current

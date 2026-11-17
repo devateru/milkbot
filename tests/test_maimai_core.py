@@ -90,6 +90,49 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(segments[1].sequence, 8)
         self.assertEqual(segments[1].epoch - segments[0].epoch, 2)
 
+    def test_gap_keeps_sections_with_observed_scores_on_both_boundaries(self):
+        chart = parse_simai('(120){4},1,2,3,4,5,6,7,8,E')
+        sections = parse_sections('1:-.1,3:-.1,5:-.1,7:-.1', chart)
+        values = [(10, '100'), (11.25, '100'), (12.25, '99.8260'), (13.25, '99.8260'), (14.25, '99.8260')]
+        for mode in ('-', '+'):
+            if mode == '+':
+                values = [(10, '0'), (11.25, '25'), (12.25, '49.8260'), (13.25, '74.8260'), (14.25, '99.8260')]
+            samples = [Sample(at, mode, value) for at, value in values]
+            results = evaluate(chart, sections, samples, 10, 14.4, gaps=((11.4, 11.9),))
+            self.assertEqual([r.status for r in results], ['passed', 'failed', 'passed', 'passed'])
+            self.assertEqual(results[1].loss, Decimal('.1740'))
+            samples = [sample for sample in samples if sample.time != 12.25]
+            results = evaluate(chart, sections, samples, 10, 14.4, gaps=((11.4, 12.4),))
+            self.assertEqual([r.status for r in results], ['passed', 'lost', 'lost', 'passed'])
+            self.assertTrue(all(r.loss is None for r in results[1:3]))
+
+    def test_live_gap_keeps_same_play_after_fresh_confirmation(self):
+        chart = Chart('std:abc:master', 'Credits', 'std', 'master', '14.6')
+        other = Chart('std:other:master', 'Rival', 'std', 'master', '14.8')
+        for fields, expected in [({'title': 'Credits', 'track': 2}, True),
+                                 ({'title': 'Credits', 'track': 3}, False),
+                                 ({'title': 'Credits', 'track': 2, 'nickname': 'Rival', 'confidence': 95}, False),
+                                 ({'title': 'Rival', 'track': 2}, False)]:
+            with self.subTest(fields=fields):
+                tracker = Tracker(lambda f: {'Credits': chart, 'Rival': other}.get(f.title), lambda _: True, 'left')
+                for at in (10, 10.5):
+                    tracker.feed(Frame(at, 'ready', title='Credits', track=2, nickname='Milk', confidence=95))
+                original, _ = tracker.feed(Frame(11, 'start', origin=11, samples=(Sample(11, '-', '101'),)))
+                self.assertEqual(tracker.feed(Frame(16, gap=True), live=True), (None, None))
+                started, finished = tracker.feed(Frame(16.5, 'playing', **fields,
+                                                      samples=(Sample(16.5, '-', '100.8'),)), live=True)
+                self.assertIsNone(started)
+                if expected:
+                    self.assertIsNone(finished)
+                    _, finished = tracker.feed(Frame(17, 'result'), live=True)
+                    self.assertEqual(finished.status, 'finished')
+                    self.assertEqual([row.time for row in finished.samples], [11, 16.5])
+                else:
+                    self.assertEqual(finished.status, 'interrupted')
+                    self.assertEqual([row.time for row in finished.samples], [11])
+                self.assertIs(finished, original)
+                self.assertEqual((finished.nickname, finished.origin, finished.gaps), ('Milk', 11, [(11, 16.5)]))
+
     def test_repeated_plays_identity_and_targets(self):
         chart = Chart("std:abc:master", "Credits", "std", "master", "14.6")
         tracker = Tracker(lambda _: chart, lambda play: play.nickname == "MI LK")

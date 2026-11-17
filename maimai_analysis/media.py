@@ -320,6 +320,8 @@ class Decoder:
                         (s.sequence for s in segments if s.epoch + s.duration - origin > requested),
                         segments[-1].sequence))
                     log.info('live DVR range first=%.3f edge=%.3f sequence=%d', first, edge, sequence)
+                if requested is None and segments[-1].sequence - sequence >= 2:
+                    segments = segments[-1:]
                 for segment in segments:
                     if segment.sequence < sequence:
                         continue

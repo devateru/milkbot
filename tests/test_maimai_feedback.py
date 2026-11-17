@@ -105,6 +105,14 @@ class FeedbackTests(unittest.TestCase):
                 tracker.active = Play(self.chart, 'Milk' if seat == chosen else 'Rival', 95, 3, seat=seat)
                 frame = view.inspect(FrameImage(10, canvas.tobytes()), tracker)
                 self.assertEqual([sample.value for sample in frame.samples], [expected] if seat == chosen else [])
+                tracker.last_track = 2
+                tracker.previous = 10
+                view.last_field = float('-inf')
+                view.metadata = Mock(return_value=('Credits', 'std', 'master'))
+                view.track_number = Mock(return_value=2)
+                frame = view.inspect(FrameImage(15, canvas.tobytes(), discontinuity=True), tracker, live=True)
+                self.assertEqual((frame.title, frame.track, frame.start_time), ('Credits', 2, 3))
+                self.assertEqual([sample.value for sample in frame.samples], [expected] if seat == chosen else [])
 
     def test_sqlite_schema_keeps_only_settings_and_charts(self):
         with tempfile.TemporaryDirectory() as directory:

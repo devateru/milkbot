@@ -394,6 +394,10 @@ class Vision:
             return Reading()
         return max(confident, key=lambda result: result.confidence)
 
+    @staticmethod
+    def needs_name(tracker):
+        return not tracker.nickname or (identity_key(tracker.nickname) == 'guest' and not tracker.guest)
+
     def inspect(self, image, tracker, live=False):
         timestamp = image.time
         if image.discontinuity:
@@ -419,8 +423,7 @@ class Vision:
                     self.last_field = timestamp
                     title, kind, difficulty = self.metadata(img)
                     frame = replace(frame, title=title, kind=kind, difficulty=difficulty)
-            unknown_identity = not tracker.nickname or (identity_key(tracker.nickname) == 'guest' and not tracker.guest)
-            if unknown_identity and (tracker.ready_pending or active) and (
+            if self.needs_name(tracker) and (tracker.ready_pending or active) and (
                     timestamp - self.play_start <= 5 and timestamp - self.last_name >= 0.35):
                 self.last_name = timestamp
                 frame = self.named(frame, img, self.player_name(img), self.track_number(img))
@@ -480,13 +483,13 @@ class Vision:
             self.play_votes = 0
             self.loss_of_play = None
             self.modes = {name: ScoreMode(self.hud_modes.get(name, 'auto')) for name in self.modes}
-        if phase == 'profile':
+        if phase == 'profile' and (tracker.last_phase != 'profile' or self.needs_name(tracker)):
             name = (self.read(img, 'profile_name', scale=3) if 'AIME' in hint.upper() else
                     self.player_name(img))
             frame = self.named(frame, img, name, track)
         if phase == 'ready':
             title, kind, difficulty = self.metadata(img, menu=True)
-            if track:
+            if track and (track == 1 or self.needs_name(tracker)):
                 frame = self.named(frame, img, self.player_name(img), track)
             frame = replace(frame, title=title, kind=kind, difficulty=difficulty)
         return replace(frame, phase=phase, track=track)
@@ -542,9 +545,12 @@ class CabinetVision(Vision):
                 frame = replace(frame, title=title, kind=kind, difficulty=difficulty)
             if first:
                 self.play_start = timestamp
-            if timestamp - self.play_start <= 5 and timestamp - self.last_name >= 0.35:
+            if (first or self.needs_name(tracker)) and (
+                    timestamp - self.play_start <= 5 and timestamp - self.last_name >= 0.35):
                 self.last_name = timestamp
-                frame = self.named(frame, img, self.player_name(img), self.track_number(img))
+                track = self.track_number(img)
+                frame = (self.named(frame, img, self.player_name(img), track)
+                         if track == 1 or self.needs_name(tracker) else replace(frame, track=track))
                 if first and frame.track and not tracker.ready_pending and tracker.previous is not None:
                     return replace(frame, phase='ready')
             samples = ()
@@ -578,7 +584,9 @@ class CabinetVision(Vision):
             if self.play_start is not None:
                 self.reset()
             self.blank_since = None
-            return replace(self.named(frame, img, self.player_name(img), track), phase='ready')
+            ready = replace(frame, phase='ready', track=track)
+            return (self.named(ready, img, self.player_name(img), track)
+                    if track == 1 or self.needs_name(tracker) else ready)
         if self.blank_since is None:
             self.blank_since = timestamp
         if timestamp - self.blank_since >= 3:
@@ -601,7 +609,8 @@ class BroadcastVision:
 
     def inspect_seats(self, image, trackers, live):
         previous_layout = self.layout
-        if image.discontinuity or image.time - self.checked_at >= 0.6:
+        active = any(tracker.active for tracker in trackers.values())
+        if image.discontinuity or image.time - self.checked_at >= (2 if active else .6):
             self.checked_at = image.time
             single = self.single
             img = single.np.frombuffer(image.pixels, single.np.uint8).reshape(single.height, single.width)

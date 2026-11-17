@@ -27,6 +27,7 @@ from song_presentation import format_song_constants
 from song_filter import get_song_filters
 
 load_dotenv(".env")
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 BOT_DEVELOPER_ID = os.getenv("BOT_DEVELOPER_ID")
@@ -961,4 +962,4 @@ async def on_ready() -> None:
     print(f"Logged in as {client.user}")
 
 
-client.run(TOKEN)
+client.run(TOKEN, root_logger=True)

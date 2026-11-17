@@ -91,6 +91,15 @@ def _parse_datetime(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
+def get_broadcast_start(video_id: str) -> float | None:
+    data = _request_youtube("videos", {"part": "liveStreamingDetails", "id": video_id})
+    for item in data.get("items", ()):
+        if item.get("id") == video_id:
+            stamp = _parse_datetime(item.get("liveStreamingDetails", {}).get("actualStartTime"))
+            return stamp.timestamp() if stamp else None
+    return None
+
+
 def _best_thumbnail(snippet: dict[str, Any]) -> str | None:
     thumbnails = snippet.get("thumbnails")
 

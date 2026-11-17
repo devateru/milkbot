@@ -1,6 +1,7 @@
 """Read YouTube frames on a PC through a loopback-only SSH forward."""
 
 from contextlib import closing
+from dataclasses import replace
 from functools import lru_cache
 from hmac import compare_digest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,7 +19,9 @@ import zlib
 import requests
 from urllib3.exceptions import HTTPError
 
-from .media import Decoder, Image, MediaError, Source, resolve
+from youtube_live import YouTubeLiveError, get_broadcast_start
+
+from .media import DVRRangeError, Decoder, Image, MediaError, Source, resolve
 from .youtube import VIDEO_ID, Video
 
 
@@ -32,18 +35,37 @@ VOD_WINDOW = 120
 def relay_error(response, default):
     if response.headers.get('Content-Type') == 'application/json':
         try:
-            message = response.json()['error']
+            data = response.json()
+            message = data['error']
             if isinstance(message, str):
-                return MediaError(message)
+                return (DVRRangeError if data.get('outside_dvr') else MediaError)(message)
         except (ValueError, TypeError, KeyError):
             pass
     return MediaError(default)
 
 
+@lru_cache(maxsize=64)
+def verified_start(video_id):
+    stamp = get_broadcast_start(video_id)
+    if stamp is None:
+        raise YouTubeLiveError('YouTube did not report an actual start')
+    return stamp
+
+
+def with_verified_start(video, source, live):
+    if not live or source.epoch is None:
+        return source
+    try:
+        actual = verified_start(video.id)
+    except (YouTubeLiveError, ValueError):
+        return source
+    return replace(source, actual_epoch=actual) if abs(actual - source.epoch) <= 2 else source
+
+
 def resolve_for_bot(video, live, height):
     port = os.getenv('MAIMAI_VOD_RELAY_PORT')
     if not port:
-        return resolve(video, live, height)
+        return with_verified_start(video, resolve(video, live, height), live)
     token = os.getenv('MAIMAI_VOD_RELAY_TOKEN')
     if not token:
         raise MediaError('Windows PC 영상 연결의 인증 설정을 확인해주세요.')
@@ -55,7 +77,7 @@ def resolve_for_bot(video, live, height):
     except requests.RequestException:
         log.warning('maimai Windows VOD relay unavailable video=%s', video.id)
         try:
-            return resolve(video, live, height)
+            return with_verified_start(video, resolve(video, live, height), live)
         except MediaError as problem:
             raise MediaError(f'{problem} Windows PC의 영상 연결도 확인할 수 없습니다.') from problem
     if response.status_code == 401:
@@ -69,12 +91,14 @@ def resolve_for_bot(video, live, height):
         raise MediaError('Windows PC에서 돌아온 영상 길이를 확인할 수 없습니다.') from problem
     if not math.isfinite(timing) or timing <= 0:
         raise MediaError('Windows PC에서 돌아온 영상 길이를 확인할 수 없습니다.')
-    return Source(url, headers, None if live else timing, timing if live else None, PROTOCOL)
+    return with_verified_start(video, Source(url, headers, None if live else timing, timing if live else None,
+                                             PROTOCOL), live)
 
 
 def read_frames(source, start, end, width, height, fps, *, live=False):
     frame_size = width * height
-    params = {'start': start, 'end': end, 'width': width, 'height': height, 'fps': fps, 'live': int(live)}
+    params = {'start': start, 'end': end, 'width': width, 'height': height, 'fps': fps, 'live': int(live),
+              'actual_epoch': source.actual_epoch if live else None}
     try:
         with requests.get(source.url + '/frames', headers=source.headers, params=params,
                           timeout=TIMEOUT, allow_redirects=False, stream=True) as response:
@@ -98,10 +122,12 @@ def read_frames(source, start, end, width, height, fps, *, live=False):
     raise MediaError('Windows PC에서 영상 프레임을 끝까지 받지 못했습니다.')
 
 
-def read_vod_frames(source, start, end, width, height, fps):
+def read_vod_frames(source, start, end, width, height, fps, *, stop=None):
     end = source.duration if end is None else end
     last = float('-inf')
     while start < end:
+        if stop is not None and stop.is_set():
+            return
         boundary = min(start + VOD_WINDOW, end)
         cursor = start
         for attempt in range(3):
@@ -116,10 +142,15 @@ def read_vod_frames(source, start, end, width, height, fps):
                     raise MediaError('Windows PC에서 요청한 구간의 마지막 프레임을 받지 못했습니다.')
                 break
             except MediaError as problem:
+                if stop is not None and stop.is_set():
+                    return
                 log.warning('maimai Windows VOD relay interrupted position=%.3f attempt=%d', cursor, attempt + 1)
                 if attempt == 2:
                     raise MediaError(f'{problem} 영상 시각 {cursor:.1f}초에서 재시도를 완료하지 못했습니다.') from problem
-                time.sleep(2)
+                if stop is None:
+                    time.sleep(2)
+                elif stop.wait(2):
+                    return
         start = boundary
 
 
@@ -182,6 +213,14 @@ def serve(port, token):
             if len(route) == 3:
                 self.send_json(200, {'duration': source.duration, 'epoch': source.epoch})
                 return
+            if live and 'actual_epoch' in query:
+                try:
+                    actual = float(query['actual_epoch'][0])
+                except ValueError:
+                    self.send_error(400)
+                    return
+                if abs(actual - source.epoch) <= 2:
+                    source = replace(source, actual_epoch=actual)
             slot = live_slots if live else stream_lock
             if not slot.acquire(blocking=False):
                 self.send_error(503)
@@ -216,7 +255,7 @@ def serve(port, token):
                 log.warning('maimai Windows VOD relay decode failed: %s', type(problem).__name__)
                 if not started:
                     if isinstance(problem, MediaError):
-                        self.send_json(502, {'error': str(problem)})
+                        self.send_json(502, {'error': str(problem), 'outside_dvr': isinstance(problem, DVRRangeError)})
                     else:
                         self.send_error(502)
 

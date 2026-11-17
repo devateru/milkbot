@@ -10,13 +10,53 @@ from discord import app_commands
 from .catalog import DIFFICULTIES, chart_record
 from .delivery import video_clock
 from .media import MediaError
-from .service import AnalysisService
+from .service import AnalysisBusy, AnalysisService
 from .simai import adjustment_footer, note_at, parse_sections
 from .youtube import parse_time, parse_video, video_link
 
 
 log = logging.getLogger(__name__)
 CHOICES = [app_commands.Choice(name=name, value=key) for key, name in DIFFICULTIES.items()]
+CANCELLED = object()
+
+
+class SwitchAnalysis(discord.ui.View):
+    def __init__(self, user_id):
+        super().__init__(timeout=45)
+        self.user_id = user_id
+        self.confirmed = False
+
+    async def interaction_check(self, interaction):
+        return interaction.user.id == self.user_id
+
+    @discord.ui.button(label='중단하고 시작', style=discord.ButtonStyle.danger)
+    async def replace(self, interaction, _button):
+        await interaction.response.edit_message(content='현재 분석 작업을 정리 중입니다.', view=None)
+        self.confirmed = True
+        self.stop()
+
+    @discord.ui.button(label='현재 작업 유지', style=discord.ButtonStyle.secondary)
+    async def keep(self, interaction, _button):
+        await interaction.response.edit_message(content='현재 분석을 계속합니다.', view=None)
+        self.stop()
+
+
+async def request_analysis(interaction, action):
+    try:
+        return await action()
+    except AnalysisBusy as problem:
+        view = SwitchAnalysis(interaction.user.id)
+        prompt = await interaction.followup.send(
+            '영상 분석이 진행 중입니다. 현재 작업을 중단하고 새 요청을 시작할까요?',
+            view=view, ephemeral=True, wait=True)
+        if await view.wait():
+            try:
+                await prompt.edit(content='응답 시간이 지나 현재 분석을 계속합니다.', view=None)
+            except discord.HTTPException:
+                pass
+        if view.confirmed:
+            return await action(replace_run=problem.run)
+        return CANCELLED
 
 
 def parse_times(text):
@@ -194,7 +234,10 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
             if first_note is not None:
                 origin = parse_time(first_note) - simai.notes[0].time
             else:
-                origin = await app.calibrate_for_interaction(video, chart.key, simai, times)
+                origin = await request_analysis(interaction, lambda **options: app.calibrate_for_interaction(
+                    video, chart.key, simai, times, user_id=interaction.user.id, **options))
+                if origin is CANCELLED:
+                    return
             lines = []
             for timestamp in times:
                 notes = note_at(simai, timestamp - origin)
@@ -224,8 +267,11 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
             video = parse_video(url)
             chart = select(song, difficulty)[0] if song is not None else None
             app = await get_service()
-            await app.submit(interaction.user.id, video, live, parse_time(closing) if closing is not None else None,
-                             chart.key if chart else None, player, include_guest)
+            end = parse_time(closing) if closing is not None else None
+            job = await request_analysis(interaction, lambda **options: app.submit(
+                interaction.user.id, video, live, end, chart.key if chart else None, player, include_guest, **options))
+            if job is CANCELLED:
+                return
             text = ('라이브 분석을 등록했습니다. DM에서 대기 상태를 확인해주세요.' if live else
                     '다시보기 분석을 대기열에 등록했습니다. 완료되면 DM으로 결과를 보냅니다.')
             await interaction.followup.send(text, ephemeral=True)

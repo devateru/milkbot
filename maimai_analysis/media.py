@@ -28,6 +28,10 @@ class MediaError(RuntimeError):
     pass
 
 
+class DVRRangeError(MediaError):
+    pass
+
+
 @dataclass(frozen=True)
 class Source:
     url: str
@@ -35,6 +39,7 @@ class Source:
     duration: float | None
     epoch: float | None
     protocol: str = 'https'
+    actual_epoch: float | None = None
 
 
 @dataclass(frozen=True)
@@ -239,14 +244,14 @@ class Decoder:
             process.stdout.close()
             process.stderr.close()
 
-    def vod(self, source, start, end, *, fps=None):
+    def vod(self, source, start, end, *, fps=None, stop=None):
         if source.duration is not None and start >= source.duration:
             raise MediaError('분석할 시작 시간이 영상 길이를 벗어납니다.')
         end = min(end, source.duration) if end is not None and source.duration else end
         if source.protocol == 'vod-relay':
             from .vod_relay import read_vod_frames
 
-            yield from read_vod_frames(source, start, end, self.width, self.height, fps or self.fps)
+            yield from read_vod_frames(source, start, end, self.width, self.height, fps or self.fps, stop=stop)
             return
         length = end - start if end is not None else None
         if source.protocol.startswith('m3u8'):
@@ -302,14 +307,15 @@ class Decoder:
                     continue
                 segments, ended = parse_hls(response.text, response.url)
                 if sequence is None:
-                    if segments[0].sequence != 0:
-                        raise MediaError('DVR에서 영상 0초에 해당하는 세그먼트를 확인하지 못했습니다.')
-                    origin = segments[0].epoch
-                    if abs(origin - source.epoch) > 120:
+                    origin = segments[0].epoch if segments[0].sequence == 0 else source.actual_epoch
+                    if origin is None:
+                        raise MediaError('잘린 DVR의 영상 시작 시각을 YouTube에서 검증하지 못했습니다.')
+                    if (abs(origin - source.epoch) > 120 or
+                            segments[0].epoch - origin < -1):
                         raise MediaError('라이브 DVR과 방송 시작 시각이 일치하지 않습니다.')
                     first, edge = segments[0].epoch - origin, segments[-1].epoch - origin
                     if requested is not None and not first - 0.5 <= requested <= edge + segments[-1].duration:
-                        raise MediaError(f'요청 시각이 DVR 범위({max(0, int(first))}~{int(edge)}초)를 벗어났습니다.')
+                        raise DVRRangeError(f'요청 시각이 DVR 범위({max(0, int(first))}~{int(edge)}초)를 벗어났습니다.')
                     sequence = (segments[-1].sequence if requested is None else next(
                         (s.sequence for s in segments if s.epoch + s.duration - origin > requested),
                         segments[-1].sequence))

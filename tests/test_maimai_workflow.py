@@ -14,14 +14,14 @@ from unittest.mock import AsyncMock, Mock, patch
 from PIL import Image
 
 from maimai_analysis.capture import CaptureAlignment
-from maimai_analysis.commands import parse_times, goals_embed, register_analysis
+from maimai_analysis.commands import CANCELLED, SwitchAnalysis, goals_embed, parse_times, register_analysis, request_analysis
 from maimai_analysis.delivery import Delivery
 from maimai_analysis.hud import score_digits, early_judgments
 from maimai_analysis.jobs import Job, play_key
 from maimai_analysis.mai_notes import CachedChart
 from maimai_analysis.media import Decoder, Image as VideoFrame, MediaError, Source, resolve
 from maimai_analysis.scoring import Sample
-from maimai_analysis.service import AnalysisService, resource_usage
+from maimai_analysis.service import AnalysisBusy, AnalysisService, resource_usage
 from maimai_analysis.simai import parse_sections, parse_simai
 from maimai_analysis.store import Store
 from maimai_analysis.tracking import Chart, Frame, Play
@@ -282,6 +282,59 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.live_jobs, {})
         resolver.assert_not_called()
 
+    async def test_switch_waits_for_the_running_analysis_to_close(self):
+        worker_stopped = Event()
+        began = Event()
+        service = AnalysisService(self.store, lambda: None, AsyncMock(),
+                                  resolve_source=Mock(return_value=Mock(duration=20)))
+
+        def scan(*args, cancel, **kwargs):
+            began.set()
+            self.assertTrue(cancel.wait(3))
+            worker_stopped.set()
+
+        service.scan = Mock(side_effect=scan)
+        service.delivery.history = AsyncMock()
+        await service.start()
+        self.addAsyncCleanup(service.close)
+        await service.submit(1, Video(self.video, 0), False, None, None, 'Milk')
+        self.assertTrue(await asyncio.to_thread(began.wait, 2))
+        another = Video('O-ErNwyDSCU', 0)
+        with self.assertRaises(AnalysisBusy) as blocked:
+            await service.submit(1, another, False, None, None, None)
+        self.assertFalse(worker_stopped.is_set())
+        with self.assertRaisesRegex(ValueError, '요청한 사람'):
+            await service.submit(2, another, False, None, None, 'Rival', replace_run=blocked.exception.run)
+        service.scan.side_effect = None
+        running_scan = service.scan.call_args.kwargs['cancel']
+        await service.submit(1, another, False, None, None, None, replace_run=blocked.exception.run)
+        self.assertTrue(running_scan.is_set())
+        self.assertTrue(worker_stopped.is_set())
+
+    async def test_switch_buttons_only_replace_after_confirmation(self):
+        requester = Mock()
+        requester.user.id = 1
+        requester.followup.send = AsyncMock()
+        requester.response.edit_message = AsyncMock()
+        conflict = AnalysisBusy(object())
+
+        for confirm in (False, True):
+            action = AsyncMock(side_effect=[conflict, 'started'])
+
+            async def wait_for_click(view):
+                button = view.replace if confirm else view.keep
+                await button.callback(requester)
+                return False
+
+            with patch.object(SwitchAnalysis, 'wait', wait_for_click):
+                result = await request_analysis(requester, action)
+            if confirm:
+                self.assertEqual(result, 'started')
+                self.assertEqual(action.await_args.kwargs, {'replace_run': conflict.run})
+            else:
+                self.assertIs(result, CANCELLED)
+                action.assert_awaited_once()
+
     async def test_live_guest_toggle_is_user_and_broadcast_specific(self):
         service = AnalysisService(self.store, lambda: None, AsyncMock())
         self.addAsyncCleanup(service.close)
@@ -325,7 +378,6 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(service.close)
         job = Job(1, self.video, True, None, None, 'Milk', None, include_guest=True)
         service.live_jobs[self.video] = (job,)
-        service.busy[self.video] = Event()
         plays = []
         scanner = asyncio.create_task(asyncio.to_thread(
             service.scan, self.video, Mock(), None, None, True, lambda: (job,),
@@ -335,6 +387,53 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         toggled.set()
         await scanner
         self.assertEqual([job.matches(play) for play in plays], [True, False])
+
+    async def test_calibration_timeout_stops_worker_before_releasing_slot(self):
+        service = AnalysisService(self.store, lambda: None, AsyncMock())
+        abandoned = Event()
+
+        async def calibrate(*args, cancel):
+            await asyncio.to_thread(cancel.wait, 2)
+            if cancel.is_set():
+                abandoned.set()
+
+        service.calibrate = calibrate
+        with patch('maimai_analysis.service.CALIBRATION_TIMEOUT', .025), self.assertRaises(TimeoutError):
+            await service.calibrate_for_interaction(Video(self.video, 0), self.chart.key, self.simai, [12], user_id=1)
+        await asyncio.gather(*service.sync_jobs)
+        self.assertTrue(abandoned.is_set())
+        self.assertIsNone(service.current)
+
+    def test_live_reconnect_resumes_from_last_frame_and_marks_gap(self):
+        def disconnect():
+            yield VideoFrame(120, b'', 1700000120)
+            raise MediaError('temporary failure')
+
+        decoder = Mock(width=640, height=360, fps=8)
+        decoder.live.side_effect = [disconnect(), (frame for frame in [
+            VideoFrame(120, b'', 1700000120), VideoFrame(123, b'', 1700000123)])]
+        service = AnalysisService(self.store, lambda: None, AsyncMock(), decoder=decoder,
+                                  resolve_source=Mock(return_value=Mock()))
+        stop = Mock(is_set=Mock(return_value=False))
+        result = list(service.live_frames(self.video, None, None, stop))
+        self.assertEqual([(frame.time, frame.discontinuity) for frame in result], [(120, False), (123, True)])
+        self.assertEqual(decoder.live.call_args.args[1], 120)
+
+    def test_late_dvr_uses_verified_broadcast_start(self):
+        from datetime import datetime, timezone
+        origin = 1700000000
+        stamp = datetime.fromtimestamp(origin + 60, timezone.utc).isoformat()
+        response = Mock(text=f'#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:10\n#EXT-X-PROGRAM-DATE-TIME:{stamp}\n'
+                             '#EXTINF:6,\nfirst.ts\n#EXT-X-ENDLIST',
+                        url='https://example.com/live.m3u8')
+        decoder = Decoder()
+        with patch('requests.Session.get', return_value=response), \
+                patch.object(decoder, 'frames', return_value=iter([VideoFrame(60, b'', origin + 60)])):
+            unverified = Source(response.url, {}, None, origin, 'm3u8')
+            with self.assertRaisesRegex(MediaError, '검증'):
+                list(decoder.live(unverified, None))
+            source = Source(response.url, {}, None, origin, 'm3u8', actual_epoch=origin)
+            self.assertEqual([frame.time for frame in decoder.live(source, None)], [60])
 
     async def test_vod_shares_inflight_decoder_and_rescans_on_new_command(self):
         index = SongLookup([{'title': 'Credits', 'artist': 'Frums',
@@ -363,7 +462,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
             Frame(11, 'credit_end'), Frame(11.6)
         ]
         mocked = Mock(width=640, height=360, fps=6)
-        mocked.vod = Mock(side_effect=lambda *args: (f for f in frames))
+        mocked.vod = Mock(side_effect=lambda *args, **kwargs: (f for f in frames))
         vision = Mock()
         vision.inspect_seats.side_effect = lambda frame, trackers, live: {
             'left': Frame(frame.time, 'playing', samples=(Sample(frame.time, '-', '100'),))
@@ -417,7 +516,12 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         await delivery.waiting(job)
         await delivery.started(job, play)
         self.store.save_target(1, self.chart.key, self.cached, parse_sections('1:-.3,3:-.3', self.simai))
-        await delivery.finished(job, play)
+        play.end_epoch, play.result_epoch, play.received_end = 982, 984, 997
+        with patch('maimai_analysis.delivery.time.time', return_value=1000), \
+                self.assertLogs('maimai_analysis.delivery', level='INFO') as log:
+            await delivery.finished(job, play)
+        self.assertIn('youtube_seconds=13.000 result_wait_seconds=2.000 processing_dm_seconds=3.000 total_seconds=18.000',
+                      log.output[0])
         self.assertEqual(str(sent[0].id), job.reports[play_key(play)])
         self.assertEqual(sent[0].edit.await_count, 2)
         self.assertNotIn('미달성', sent[0].edit.call_args.kwargs['embed'].description)

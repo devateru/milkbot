@@ -20,6 +20,28 @@ CHOICES = [app_commands.Choice(name=name, value=key) for key, name in DIFFICULTI
 CANCELLED = object()
 
 
+async def show_request(interaction):
+    data = interaction.data
+    lines = [f"/{data['name']}"]
+    for option in data.get('options', ()):
+        value = option['value']
+        if isinstance(value, bool):
+            value = '켜짐' if value else '꺼짐'
+        lines.append(f"{option['name']}: {value}")
+    inputs = '\n'.join(lines).replace('```', '``\u200b`')
+    if len(inputs) > 1500:
+        inputs = inputs[:1499] + '…'
+    trace = f'```\n{inputs}\n```'
+    await interaction.response.send_message(trace, allowed_mentions=discord.AllowedMentions.none())
+    return trace
+
+
+async def update_request(interaction, trace, status=None, **kwargs):
+    content = f'{trace}\n{status}' if status else trace
+    await interaction.edit_original_response(content=content[:2000],
+                                             allowed_mentions=discord.AllowedMentions.none(), **kwargs)
+
+
 class SwitchAnalysis(discord.ui.View):
     def __init__(self, user_id):
         super().__init__(timeout=45)
@@ -48,7 +70,7 @@ async def request_analysis(interaction, action):
         view = SwitchAnalysis(interaction.user.id)
         prompt = await interaction.followup.send(
             '영상 분석이 진행 중입니다. 현재 작업을 중단하고 새 요청을 시작할까요?',
-            view=view, ephemeral=True, wait=True)
+            view=view, wait=True)
         if await view.wait():
             try:
                 await prompt.edit(content='응답 시간이 지나 현재 분석을 계속합니다.', view=None)
@@ -177,10 +199,10 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
         record, sheet, fallback = index.select(value, difficulty)
         return chart_record(value, record, sheet), record, sheet, fallback
 
-    async def reply_error(interaction, problem):
+    async def reply_error(interaction, trace, problem):
         if not isinstance(problem, (ValueError, RuntimeError)):
             log.exception('maimai analysis command failed')
-        await interaction.followup.send(AnalysisService.describe(problem), ephemeral=True)
+        await update_request(interaction, trace, AnalysisService.describe(problem))
 
     async def load_chart(app, user, chart, record, sheet, link=None):
         previous = await app.db(app.store.target, user, chart.key)
@@ -198,7 +220,7 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
                            goals='예) 100개:-0.1, 나머지:-0.05 또는 1:-0.1, 101:-0.05. 입력하면 즉시 저장합니다.')
     async def set_target(interaction: discord.Interaction, song: str, chart_link: str | None = None,
                          difficulty: str = 'master', goals: str | None = None):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        trace = await show_request(interaction)
         try:
             chart, record, sheet, fallback = select(song, difficulty)
             app = await get_service()
@@ -209,10 +231,10 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
             else:
                 sections = previous.sections if previous and previous.cached.url == cached.url else ()
             view = GoalView(interaction.user.id, app, make_song_embed, chart, record, sheet, cached, sections, fallback)
-            await interaction.followup.send(content='목표를 저장했습니다.' if goals is not None else None,
-                                            embed=view.embed(), view=view, ephemeral=True)
+            await update_request(interaction, trace, '목표를 저장했습니다.' if goals is not None else None,
+                                 embed=view.embed(), view=view)
         except Exception as problem:
-            await reply_error(interaction, problem)
+            await reply_error(interaction, trace, problem)
 
     @tree.command(name='구간확인', description='영상의 여러 시각에서 simai 노트 번호를 찾습니다.')
     @app_commands.allowed_installs(guilds=True, users=True)
@@ -224,7 +246,7 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
                            timestamps='초 또는 HH:MM:SS, 쉼표나 공백으로 구분')
     async def check_sections(interaction: discord.Interaction, song: str, video_link_: str, timestamps: str,
                              difficulty: str = 'master', first_note: str | None = None):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        trace = await show_request(interaction)
         try:
             chart, record, sheet, _ = select(song, difficulty)
             video, times = parse_video(video_link_), parse_times(timestamps)
@@ -249,18 +271,17 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
                 lines.append(f'[{video_clock(timestamp)}]({video_link(video.id, timestamp)})'
                              f' · 첫 노트 기준 {timestamp - origin - simai.notes[0].time:.3f}초 · {label}')
             embed = discord.Embed(title=f'{chart.title} 구간 확인', description='\n'.join(lines), color=0xDA8EB2)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await update_request(interaction, trace, embed=embed)
         except asyncio.TimeoutError:
-            await interaction.followup.send('자동 동기화 시간이 초과되었습니다. 첫노트시간을 입력해주세요.', ephemeral=True)
+            await update_request(interaction, trace, '자동 동기화 시간이 초과되었습니다. 첫노트시간을 입력해주세요.')
         except MediaError as problem:
-            await interaction.followup.send(f'{problem} 영상에서 첫 판정 시각을 확인해 첫노트시간에 입력해주세요.',
-                                            ephemeral=True)
+            await update_request(interaction, trace, f'{problem} 영상에서 첫 판정 시각을 확인해 첫노트시간에 입력해주세요.')
         except Exception as problem:
-            await reply_error(interaction, problem)
+            await reply_error(interaction, trace, problem)
 
     async def submit(interaction, url, live, player, *, song=None, difficulty='master', closing=None,
                      include_guest=False):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        trace = await show_request(interaction)
         try:
             if get_index() is None:
                 raise ValueError('곡 검색 데이터를 준비 중입니다. 잠시 후 다시 시도해주세요.')
@@ -274,9 +295,9 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
                 return
             text = ('라이브 분석을 등록했습니다. DM에서 대기 상태를 확인해주세요.' if live else
                     '다시보기 분석을 대기열에 등록했습니다. 완료되면 DM으로 결과를 보냅니다.')
-            await interaction.followup.send(text, ephemeral=True)
+            await update_request(interaction, trace, text)
         except Exception as problem:
-            await reply_error(interaction, problem)
+            await reply_error(interaction, trace, problem)
 
     @tree.command(name='영상분석', description='YouTube 다시보기를 분석하고 확인된 플레이를 DM으로 보냅니다.')
     @app_commands.allowed_installs(guilds=True, users=True)
@@ -302,14 +323,14 @@ def register_analysis(tree, get_service, get_index, autocomplete_song, make_song
     @app_commands.rename(video_url='라이브링크')
     @app_commands.describe(video_url='여러 방송을 분석하고 있다면 변경할 라이브 링크를 지정하세요.')
     async def toggle_guest(interaction: discord.Interaction, video_url: str | None = None):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        trace = await show_request(interaction)
         try:
             app = await get_service()
             enabled = await app.toggle_guest(interaction.user.id, parse_video(video_url).id if video_url else None)
             state = '포함합니다' if enabled else '제외합니다'
-            await interaction.followup.send(f'다음 판부터 게스트 플레이를 {state}.', ephemeral=True)
+            await update_request(interaction, trace, f'다음 판부터 게스트 플레이를 {state}.')
         except Exception as problem:
-            await reply_error(interaction, problem)
+            await reply_error(interaction, trace, problem)
 
     for command in (set_target, check_sections, analyze_live):
         command.autocomplete('song')(autocomplete_song)

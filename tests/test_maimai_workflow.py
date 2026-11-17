@@ -82,17 +82,56 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         interaction = Mock()
         interaction.user.id = 1
         interaction.response.defer = AsyncMock()
+        interaction.response.send_message = AsyncMock()
         interaction.followup.send = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+        interaction.data = {'name': '구간확인', 'options': [{'name': '타임스탬프', 'value': '12'}]}
         await tree.get_command('구간확인').callback(interaction, 'Credits', f'https://youtu.be/{self.video}',
                                                  '12', first_note='12')
-        self.assertIn('1번', interaction.followup.send.call_args.kwargs['embed'].description)
+        self.assertIn('1번', interaction.edit_original_response.call_args.kwargs['embed'].description)
+        self.assertIn('타임스탬프: 12', interaction.edit_original_response.call_args.kwargs['content'])
         self.assertIsNone(self.store.target(1, f'{option}:master'))
         app.calibrate_for_interaction = AsyncMock(side_effect=MediaError('YouTube 영상 스트림을 열 수 없습니다.'))
         await tree.get_command('구간확인').callback(interaction, option, f'https://youtu.be/{self.video}', '12')
-        self.assertIn('첫노트시간', interaction.followup.send.call_args.args[0])
+        error_content = interaction.edit_original_response.call_args.kwargs['content']
+        self.assertIn('첫노트시간', error_content)
+        self.assertIn('/구간확인', error_content)
+        interaction.data = {'name': '목표설정', 'options': [{'name': '구간목표', 'value': '2개:-0.1 나머지:-0.05'}]}
         await tree.get_command('목표설정').callback(interaction, '[ST] Credits', goals='2개:-0.1 나머지:-0.05')
+        self.assertIn('목표를 저장했습니다.', interaction.edit_original_response.call_args.kwargs['content'])
         saved = self.store.target(1, f'{option}:master')
         self.assertEqual([(section.first, section.last) for section in saved.sections], [(1, 2), (3, 4)])
+
+    async def test_video_request_leaves_public_options_when_results_go_to_dm(self):
+        import discord
+
+        tree = discord.app_commands.CommandTree(discord.Client(intents=discord.Intents.none()))
+        app = Mock(submit=AsyncMock())
+
+        async def autocomplete(interaction, current):
+            return []
+
+        register_analysis(tree, AsyncMock(return_value=app), Mock(), autocomplete, Mock())
+        interaction = Mock()
+        interaction.user.id = 1
+        interaction.response.defer = AsyncMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        interaction.edit_original_response = AsyncMock()
+        link = f'https://youtu.be/{self.video}?t=60'
+        interaction.data = {'name': '영상분석', 'options': [{'name': '영상링크', 'value': link},
+                                                        {'name': '게스트허용', 'value': True}]}
+        await tree.get_command('영상분석').callback(interaction, link, include_guest=True)
+        sent = interaction.response.send_message.await_args
+        self.assertFalse(sent.kwargs.get('ephemeral', False))
+        trace = sent.args[0]
+        self.assertIn('/영상분석', trace)
+        self.assertIn(f'영상링크: {link}', trace)
+        self.assertIn('게스트허용: 켜짐', trace)
+        content = interaction.edit_original_response.await_args.kwargs['content']
+        self.assertIn(trace, content)
+        self.assertIn('DM으로 결과', content)
+        app.submit.assert_awaited_once()
 
     def test_cropped_gameplaza_hud_and_score_type(self):
         import numpy as np

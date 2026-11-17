@@ -14,10 +14,11 @@ from .catalog import Catalog
 from .delivery import Delivery
 from .jobs import Job, choose_guest, play_key
 from .mai_notes import MaiNotes
-from .media import Decoder, MediaError, resolve
+from .media import Decoder, MediaError
 from .store import Store
 from .tracking import Frame, Tracker, identity_key
 from .vision import BroadcastVision, Vision
+from .vod_relay import resolve_for_bot
 from .youtube import Video
 
 log = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ def bounds(jobs, duration):
 
 
 class AnalysisService:
-    def __init__(self, store, get_index, open_dm, decoder=None, make_vision=None, resolve_source=resolve):
+    def __init__(self, store, get_index, open_dm, decoder=None, make_vision=None, resolve_source=resolve_for_bot):
         self.store = store
         self.notes = MaiNotes(store)
         self.delivery = Delivery(store, open_dm)

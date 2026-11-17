@@ -21,6 +21,8 @@ YouTube 스트림을 받으려면 봇의 실행 환경에서 yt-dlp가 지원하
 
 YouTube가 서버에 로그인 확인을 요구하면 관리자가 YouTube 전용 Netscape 쿠키 파일을 지정할 수 있습니다. yt-dlp는 계정에 제한이 생길 수 있다고 안내하므로, 이 방식이 필요하면 본계정과 분리된 계정의 세션을 사용합니다. 파일은 봇 서비스 계정 소유로 저장소 밖에 보관하고 `chmod 600`을 적용합니다. 서버의 `.env`에 `MAIMAI_YOUTUBE_COOKIES=/home/ubuntu/.config/milkbot/youtube-cookies.txt`처럼 파일 경로를 설정하고 봇을 재시작합니다. 로그인 확인이 계속되면 YouTube가 그 서버에서 해당 세션을 받아들이는지 확인해야 합니다. [yt-dlp의 YouTube 인증 안내](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies)
 
+서버에서 다시보기를 읽기 어렵다면 Windows PC에서 `python -m maimai_analysis.vod_relay --ssh-host ubuntu@서버 --ssh-key 키경로`를 실행합니다. PC의 Python 환경에는 `requests`, `yt-dlp[default]`, FFmpeg가 필요합니다. FFmpeg가 PATH에 없으면 `imageio-ffmpeg`로 제공할 수 있습니다. PC 실행 환경과 Ubuntu `.env`에 같은 `MAIMAI_VOD_RELAY_TOKEN`을 설정하고, Ubuntu에 `MAIMAI_VOD_RELAY_PORT=18765`를 추가한 뒤 봇을 재시작합니다. PC가 켜져 있으면 다시보기의 원본 영상 시각을 포함한 프레임을 SSH로 받아 Ubuntu에서 분석합니다. PC 연결이 끊기면 Ubuntu에서 YouTube에 직접 연결을 시도합니다.
+
 | 환경 변수 | 기본값 | 용도 |
 | --- | --- | --- |
 | `MAIMAI_ANALYSIS_DB` | `data/maimai-analysis.sqlite3` | 재시작 후에도 유지되는 파일 경로 |

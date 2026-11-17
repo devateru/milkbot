@@ -209,6 +209,11 @@ class Decoder:
         if source.duration is not None and start >= source.duration:
             raise MediaError('분석할 시작 시간이 영상 길이를 벗어납니다.')
         end = min(end, source.duration) if end is not None and source.duration else end
+        if source.protocol == 'vod-relay':
+            from .vod_relay import read_frames
+
+            yield from read_frames(source, start, end, self.width, self.height, fps or self.fps)
+            return
         length = end - start if end is not None else None
         if source.protocol.startswith('m3u8'):
             import requests

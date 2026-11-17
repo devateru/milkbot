@@ -130,7 +130,9 @@ def read_vod_frames(source, start, end, width, height, fps, *, stop=None):
             return
         boundary = min(start + VOD_WINDOW, end)
         cursor = start
-        for attempt in range(3):
+        stalled = 0
+        while True:
+            previous = last
             try:
                 with closing(read_frames(source, cursor, boundary, width, height, fps)) as frames:
                     for frame in frames:
@@ -144,8 +146,9 @@ def read_vod_frames(source, start, end, width, height, fps, *, stop=None):
             except MediaError as problem:
                 if stop is not None and stop.is_set():
                     return
-                log.warning('maimai Windows VOD relay interrupted position=%.3f attempt=%d', cursor, attempt + 1)
-                if attempt == 2:
+                stalled = 0 if last > previous else stalled + 1
+                log.warning('maimai Windows VOD relay interrupted position=%.3f stalled=%d', cursor, stalled)
+                if stalled >= 3:
                     raise MediaError(f'{problem} 영상 시각 {cursor:.1f}초에서 재시도를 완료하지 못했습니다.') from problem
                 if stop is None:
                     time.sleep(2)

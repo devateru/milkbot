@@ -71,6 +71,34 @@ class VodRelayTests(TestCase):
         self.assertEqual([frame.time for frame in result], [0, .25, .5, .75])
         self.assertAlmostEqual(read.call_args.args[1], .25)
 
+    def test_vod_keeps_retrying_while_receiving_new_frames(self):
+        def interrupted(cursor, next_time):
+            yield Image(cursor, b'a')
+            yield Image(next_time, b'b')
+            raise MediaError('interrupted')
+
+        positions = [0, 2, 4, 6, 8]
+        streams = [interrupted(a, b) for a, b in zip(positions, positions[1:])]
+        streams.append((frame for frame in [Image(9.75, b'c')]))
+        with patch('maimai_analysis.vod_relay.read_frames', side_effect=streams) as read, \
+                patch('maimai_analysis.vod_relay.time.sleep'):
+            output = list(read_vod_frames(self.source, 0, 10, 320, 180, 4))
+        self.assertEqual([frame.time for frame in output], [*positions, 9.75])
+        self.assertEqual([call.args[1] for call in read.call_args_list], positions)
+
+    def test_vod_stops_after_three_attempts_receiving_only_duplicate_frames(self):
+        def stalled(*args):
+            yield Image(5, b'a')
+            raise MediaError('interrupted')
+
+        with patch('maimai_analysis.vod_relay.read_frames', side_effect=stalled) as read, \
+                patch('maimai_analysis.vod_relay.time.sleep'):
+            frames = read_vod_frames(self.source, 0, 10, 320, 180, 4)
+            self.assertEqual(next(frames).time, 5)
+            with self.assertRaisesRegex(MediaError, '5\\.0초'):
+                next(frames)
+        self.assertEqual([call.args[1] for call in read.call_args_list], [0, 5, 5, 5])
+
     def test_unavailable_relay_falls_back_for_live_and_vod(self):
         environment = {'MAIMAI_VOD_RELAY_PORT': '18765', 'MAIMAI_VOD_RELAY_TOKEN': 'local-test-token'}
         with patch.dict('os.environ', environment), \

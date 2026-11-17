@@ -13,7 +13,7 @@ import unicodedata
 from zoneinfo import ZoneInfo
 
 from .media import MediaError
-from .hud import COUNTER_REGION, SCORE_REGION, early_judgments, guest_rating_zero, score_digits
+from .hud import COUNTER_REGION, SCORE_REGION, early_judgments, guest_rating_zero, nameplate_suffix, score_digits
 from .scoring import Sample
 from .tracking import Frame, identity_key
 
@@ -273,10 +273,10 @@ class Vision:
     def read(self, img, key, psm=7, numeric=False, threshold=None, invert=False, scale=2):
         return self.read_crop(self.crop(img, key), key, psm, numeric, threshold, invert, scale)
 
-    def read_crop(self, crop, key, psm, numeric, threshold=None, invert=False, scale=2):
+    def read_crop(self, crop, key, psm, numeric=False, threshold=None, invert=False, scale=2):
         signature = (key, psm, numeric, threshold, invert, scale)
         prior = self.cache.get(signature)
-        if prior is not None:
+        if prior is not None and prior[0].shape == crop.shape:
             delta = self.cv2.absdiff(prior[0], crop)
             # Score digits are small. Avoid coalescing any change on their glyphs.
             if not delta.max() or (not numeric and delta.mean() < 0.35):
@@ -383,16 +383,21 @@ class Vision:
         return None
 
     def player_name(self, img):
-        if self.crop(img, 'nameplate').mean() < 145:
+        crop = self.crop(img, 'nameplate')
+        if crop.mean() < 145:
             return Reading()
-        plain = self.read(img, 'nameplate', psm=8, scale=4)
-        readings = [plain, self.read(img, 'nameplate', threshold=210, scale=4),
-                    self.read(img, 'nameplate', threshold=230, scale=4)]
-        confident = [reading for reading in readings if reading.confidence >= 80 and reading.text]
-        names = {identity_key(reading.text) for reading in confident}
-        if len(names) != 1 or len(confident) < 2:
-            return Reading()
-        return max(confident, key=lambda result: result.confidence)
+        split = nameplate_suffix(crop)
+        fields = [split, (crop, '')] if split else [(crop, '')]
+        for field, suffix in fields:
+            key = 'nameplate_prefix' if suffix else 'nameplate'
+            thresholds = (175, 210) if suffix else (210, 230)
+            readings = [self.read_crop(field, key, 8, scale=4),
+                        *(self.read_crop(field, key, 7, threshold=level, scale=4) for level in thresholds)]
+            confident = [reading for reading in readings if reading.confidence >= 80 and reading.text]
+            if len(confident) >= 2 and len({identity_key(reading.text) for reading in confident}) == 1:
+                best = max(confident, key=lambda result: result.confidence)
+                return Reading(best.text + suffix, best.confidence)
+        return Reading()
 
     @staticmethod
     def needs_name(tracker):

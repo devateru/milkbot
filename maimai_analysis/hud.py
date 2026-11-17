@@ -43,6 +43,21 @@ ZERO_RATING = (
         '................................',
     ),
 )
+# Cabinet glyph samples at the original scale and resampled for the smaller 2P panel.
+NAME_SYMBOLS = {
+    '☆': (
+        '0007600000188100555665546853368537601663048228300486683007934950',
+        '1246642144555544655445556543345655433454455455544565555445544554',
+        '0026410000376310334555546542256666401466465235543676565366534776',
+    ),
+    'Σ': (
+        '9998888899954333347763110136763001267730246763108895312299988888',
+        '9988888899843333458652111237752001378620347762109984222299988888',
+        '7776665577865433456664211246653112366531345664216786543277755544',
+        '6677666666775544446655332244664422446644335555336677553366775555',
+        '8866777799664433446655221133665500336666225555228866443399887766',
+    ),
+}
 
 
 @lru_cache(maxsize=1)
@@ -118,3 +133,39 @@ def guest_rating_zero(image):
     mask = gray > baseline[:, None] + 27
     return any(
         np.count_nonzero(mask != (np.array([list(row) for row in pattern]) == '#')) <= 10 for pattern in ZERO_RATING)
+
+
+@lru_cache(maxsize=1)
+def name_symbol_templates():
+    import numpy as np
+
+    return {symbol: np.array([list(ref) for ref in refs], dtype=np.float32).reshape(-1, 8, 8) / 9
+            for symbol, refs in NAME_SYMBOLS.items()}
+
+
+def nameplate_suffix(image):
+    """Separate independently recognized suffix glyphs from the OCR prefix."""
+    import cv2
+    import numpy as np
+
+    gray = cv2.resize(image, (69, 13), interpolation=cv2.INTER_LINEAR).astype(np.float32)
+    ink = np.clip((np.median(gray) - gray[1:-2]) / 150, 0, 1)
+    mask = ink > .52
+    edges = np.flatnonzero(np.diff(np.r_[False, mask.any(axis=0), False])).reshape(-1, 2)
+    symbols = []
+    for left, right in reversed(edges):
+        rows = np.flatnonzero(mask[:, left:right].any(axis=1))
+        if not (4 <= right - left <= 9 and 6 <= rows[-1] - rows[0] + 1 <= 9):
+            break
+        feature = cv2.resize(ink[rows[0]:rows[-1] + 1, left:right], (8, 8), interpolation=cv2.INTER_AREA)
+        ranked = sorted((float(((refs - feature) ** 2).mean(axis=(1, 2)).min()), symbol)
+                        for symbol, refs in name_symbol_templates().items())
+        if ranked[0][0] > .04 or ranked[1][0] - ranked[0][0] < .04:
+            break
+        symbols.append(ranked[0][1])
+    # Wide gaps can be intentional spaces. Leave such names to ordinary OCR.
+    prefix = len(edges) - len(symbols)
+    if not symbols or not prefix or np.any(edges[prefix:, 0] - edges[prefix - 1:-1, 1] > 7):
+        return None
+    cut = round((edges[prefix - 1, 1] + edges[prefix, 0]) * image.shape[1] / (2 * gray.shape[1]))
+    return image[:, :cut], ''.join(reversed(symbols))

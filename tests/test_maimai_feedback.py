@@ -11,7 +11,7 @@ from maimai_analysis.mai_notes import MaiNotes
 from maimai_analysis.media import Image as FrameImage
 from maimai_analysis.store import Store
 from maimai_analysis.tracking import Chart, Frame, Play, Tracker
-from maimai_analysis.vision import CabinetVision, Reading, cabinet_regions
+from maimai_analysis.vision import CabinetVision, Reading, Vision, cabinet_regions
 
 
 class FeedbackTests(unittest.TestCase):
@@ -64,6 +64,31 @@ class FeedbackTests(unittest.TestCase):
         self.assertTrue(guest_rating_zero(pixels[:10]))
         self.assertTrue(guest_rating_zero(pixels[10:19, :28]))
         self.assertFalse(guest_rating_zero(pixels[20:]))
+
+    def test_symbol_name_is_read_at_both_seats_and_requires_all_symbols(self):
+        import cv2
+        import numpy as np
+
+        with Image.open(Path(__file__).parent / 'fixtures' / 'maimai-name-symbols.pgm') as fixture:
+            glyphs = np.asarray(fixture)
+        plate = np.full((13, 69), 255, dtype=np.uint8)
+        plate[3:9, 35:41] = 70  # End of the regular OCR prefix.
+        plate[:, 41:] = glyphs
+        engine = Mock()
+        engine.read.side_effect = lambda crop, *_: Reading('Other', 95) if crop.shape[1] >= 260 else Reading('Paste', 95)
+        for make_view in (lambda: Vision(1280, 720, ocr=engine),
+                          lambda: CabinetVision(1280, 720, 'left', engine),
+                          lambda: CabinetVision(1280, 720, 'right', engine)):
+            view = make_view()
+            canvas = np.full((720, 1280), 255, dtype=np.uint8)
+            x, y, right, bottom = view.regions['nameplate']
+            canvas[y:bottom, x:right] = cv2.resize(plate, (right - x, bottom - y))
+            self.assertEqual(view.player_name(canvas), Reading('Paste☆ΣΣ', 95))
+            # A genuine missing symbol must not match the configured full name.
+            plate[:, 60:] = 255
+            canvas[y:bottom, x:right] = cv2.resize(plate, (right - x, bottom - y))
+            self.assertNotEqual(view.player_name(canvas).text, 'Paste☆ΣΣ')
+            plate[:, 41:] = glyphs
 
     def test_guest_attribution_needs_one_eligible_user_and_one_identifiable_guest(self):
         guest = Play(self.chart, 'GUEST', 98, 10, seat='right', guest=True)

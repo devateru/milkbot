@@ -102,7 +102,7 @@ class SongCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('MISS', embed.fields[2].value)
         self.assertIn('PERFECT (±2F): −0.0417% = 0.4 TAP', embed.fields[3].value)
         self.assertIn('PERFECT (±3F): −0.0833%', embed.fields[3].value)
-        self.assertEqual(embed.footer.text, 'GREAT = -0.2TAP / GOOD = -.5TAP / 1F = 16.67ms')
+        self.assertEqual(embed.footer.text, 'GREAT = -0.2TAP / GOOD = -0.5TAP / 1F = 16.67ms')
 
     def test_shared_song_embed_keeps_design_and_shows_constants_below_selection(self):
         chart = {'title': 'Song', 'artist': 'A', 'imageName': 'cover.png',

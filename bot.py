@@ -12,6 +12,8 @@ import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
+from maimai_analysis.commands import register_analysis
+from maimai_analysis.service import AnalysisService
 from thumbnail_board import build_gameplaza_thumbnail_board
 from youtube_live import (
     MachineStatus,
@@ -41,13 +43,22 @@ if not BOT_DEVELOPER_ID:
 BOT_DEVELOPER_ID = int(BOT_DEVELOPER_ID)
 
 
+class MilkbotClient(discord.Client):
+    async def close(self) -> None:
+        if _analysis is not None:
+            await _analysis.close()
+        await super().close()
+
+
 intents = discord.Intents.default()
-client = discord.Client(intents=intents)
+client = MilkbotClient(intents=intents)
 tree = app_commands.CommandTree(client)
 _synced = False
 _update_dm_sent = False
 _song_lookup = None
 _song_lookup_task = None
+_analysis = None
+_analysis_lock = asyncio.Lock()
 
 
 async def refresh_song_lookup() -> None:
@@ -62,135 +73,8 @@ async def keep_song_lookup_updated() -> None:
     while not client.is_closed():
         await asyncio.sleep(3600 if _song_lookup is not None else 60)
         await refresh_song_lookup()
-
-
-# ---------------------------------------------------------------------------
-# 새 슬래시 명령어를 추가하는 곳
-# ---------------------------------------------------------------------------
-# 명령어는 모두 전역 Application Command로 등록하고,
-# allowed_installs / allowed_contexts로 설치 방식과 실행 위치를 구분합니다.
-#
-# [1] 서버 설치(Guild Install) 전용
-#
-# @tree.command(name="서버명령어", description="서버에서만 사용하는 명령어입니다.")
-# @app_commands.allowed_installs(guilds=True, users=False)
-# @app_commands.allowed_contexts(
-#     guilds=True,
-#     dms=False,
-#     private_channels=False,
-# )
-# async def guild_only_command(interaction: discord.Interaction) -> None:
-#     await interaction.response.send_message("서버 전용 명령어")
-#
-#
-# [2] 사용자 설치(User Install) 전용
-# 사용자가 밀크봇을 자기 계정에 설치한 뒤, 봇이 들어가 있지 않은 서버나
-# DM/GDM 등에서도 사용할 개인용 명령어에 사용합니다.
-#
-# @tree.command(name="개인명령어", description="개인 앱으로 사용하는 명령어입니다.")
-# @app_commands.allowed_installs(guilds=False, users=True)
-# @app_commands.allowed_contexts(
-#     guilds=True,
-#     dms=True,
-#     private_channels=True,
-# )
-# async def user_only_command(interaction: discord.Interaction) -> None:
-#     await interaction.response.send_message("사용자 설치 전용 명령어")
-#
-#
-# [3] 서버 설치 + 사용자 설치 모두 허용
-# 조회/계산처럼 서버 권한이 필요 없는 명령어에 적합합니다.
-#
-# @tree.command(name="공용명령어", description="어디서나 사용할 수 있는 명령어입니다.")
-# @app_commands.allowed_installs(guilds=True, users=True)
-# @app_commands.allowed_contexts(
-#     guilds=True,
-#     dms=True,
-#     private_channels=True,
-# )
-# async def shared_command(interaction: discord.Interaction) -> None:
-#     await interaction.response.send_message("공용 명령어")
-#
-#
-# name은 Discord에 표시할 명령어 이름, description은 명령어 설명입니다.
-# 사용자가 입력할 옵션은 함수 매개변수로 추가할 수 있습니다.
-# 처리 시간이 길면 interaction.response.defer() 후
-# interaction.followup.send(...)로 결과를 전송하세요.
-#
-# 명령어를 추가한 뒤 봇을 재시작하면 on_ready()의 tree.sync()가
-# Discord의 전역 Application Command 목록을 동기화합니다.
-
-# @tree.command(name="임베드테스트", description="곡 선택 임베드 테스트용")
-# @app_commands.allowed_installs(guilds=True, users=True)
-# @app_commands.allowed_contexts(
-#     guilds=True,
-#     dms=True,
-#     private_channels=True,
-# )
-# async def foo(interaction: discord.Interaction) -> None:
-#     song_title = "INTJINTPENTJENTPINFJENFJINFPENFPISTJISFJESTJESFJESTPISTPISFPESFP"
-#     song_title = song_title if len(song_title) <= 100 else song_title[:100] + "..."
-#     song_type = "\u2060".join([
-#     "<:dx1:1546757257478410260>",
-#     "<:dx2:1546757259025977384>",
-#     "<:dx3:1546757260594778173>",
-#     "<:dx4:1546757261999738921>",
-# ])
-#     song_artist = "3markets[]"
-#     song_link = r"https://arcade-songs.zetaraku.dev/maimai/song/?id=INTJINTPENTJENTPINFJENFJINFPENFPISTJISFJESTJESFJESTPISTPISFPESFP"
-#     song_cover = r"https://dp4p6x0xfi5o9.cloudfront.net/maimai/img/cover/f13031c7d0390a23079c0b0344a272caa9dbb965d74a4d7edddcc9ae9bfee985.png"
-#     embed_color = 0x9e45e2
-#     diff_1p = "MASTER"
-#     const_1p = 13.3
-#     diff_2p = False
-#     const_2p = -1
-
-#     if diff_2p:
-#         chart_1p = f"[1P] {diff_1p} {const_1p}"
-#         chart_2p = f"[2P] {diff_2p} {const_2p}"
-#     else:
-#         chart_1p = f"{diff_1p} {const_1p}"
-#         chart_2p = ""
-    
-#     embed = discord.Embed(
-#         title=f"{song_title} {song_type}",
-#         description=song_artist,
-#         url=song_link,
-#         color=embed_color,
-#     )
-#     embed.set_thumbnail(url=song_cover)
-#     embed.add_field(name=chart_1p, value=chart_2p)
-#     view = discord.ui.View()
-
-#     view.add_item(
-#     discord.ui.Button(
-#         label="자세히 보기 [WIP]",
-#         style=discord.ButtonStyle.secondary,
-#         custom_id="detail",
-#         )
-#     )
-
-#     view.add_item(
-#         discord.ui.Button(
-#             label="다시 뽑기",
-#             style=discord.ButtonStyle.secondary,
-#             custom_id="reroll",
-#         )
-#     )
-
-#     await interaction.response.send_message(embed=embed, view=view)
-
-# 해당 코드는 분량 이슈로 gpt 랑 함께 작성
-
-import asyncio
-from urllib.parse import quote
-
-import discord
-from discord import app_commands
-
-# 파일명에 맞게 수정
-from song_filter import get_song_filters
-from song_search import search_chart, choose_chart
+        if _song_lookup is not None and _analysis is None:
+            await initialize_analysis()
 
 
 # =========================================================
@@ -939,6 +823,31 @@ async def autocomplete_song(interaction: discord.Interaction, current: str) -> l
             for option in _song_lookup.autocomplete(current)]
 
 
+async def open_analysis_dm(user_id: int) -> discord.DMChannel:
+    user = client.get_user(user_id) or await client.fetch_user(user_id)
+    return await user.create_dm()
+
+
+async def get_analysis() -> AnalysisService:
+    global _analysis
+    async with _analysis_lock:
+        if _analysis is None:
+            analysis = await AnalysisService.create(lambda: _song_lookup, open_analysis_dm)
+            await analysis.start()
+            _analysis = analysis
+        return _analysis
+
+
+async def initialize_analysis() -> None:
+    try:
+        await get_analysis()
+    except Exception:
+        logging.getLogger(__name__).exception("maimai 영상 분석을 초기화하지 못했습니다.")
+
+
+register_analysis(tree, get_analysis, lambda: _song_lookup, autocomplete_song, make_song_embed)
+
+
 @tree.command(name="겜플라이브", description="게임플라자 라이브 상태를 확인합니다.")
 @app_commands.allowed_installs(guilds=True, users=True)
 @app_commands.allowed_contexts(
@@ -1045,6 +954,9 @@ async def on_ready() -> None:
     if not _update_dm_sent:
         await notify_developer_update()
         _update_dm_sent = True
+
+    if _song_lookup is not None:
+        await initialize_analysis()
 
     print(f"Logged in as {client.user}")
 

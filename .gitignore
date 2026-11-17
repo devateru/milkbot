@@ -9,3 +9,4 @@ __pycache__/
 *.png
 .song_aliases_cache.json
 .song_aliases_cache.json.tmp
+/data/maimai-analysis.sqlite3*

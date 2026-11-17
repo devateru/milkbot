@@ -5,3 +5,5 @@ welcome to milkbot repo!
 대체어 자동완성과 DX/ST 채보 선택: [곡 검색](docs/song-search.md)
 
 선택한 채보의 노트 수, 배점과 판정별 감소율: [노트 배점](docs/note-scores.md)
+
+게임플라자 maimai 다시보기·라이브 분석과 Ubuntu 설치 방법은 [영상 분석](docs/maimai-analysis.md)을 참고하세요.

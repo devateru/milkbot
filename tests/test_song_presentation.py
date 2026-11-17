@@ -25,7 +25,7 @@ class SongPresentationTests(unittest.TestCase):
                  {'title': '[協]Song', 'comment': '【🤝バディ】test',
                   'sheets': [sheet('utage', '【協】', 14, level='14?')]}]
         enriched = enrich_song_catalog(songs)
-        self.assertEqual(format_song_constants(enriched[0], 'dx'), '[DX] 13.8\n[X] 13+\n[協] 14 🤝')
+        self.assertEqual(format_song_constants(enriched[0], 'dx'), '[DX] 13.8\n[X] 13+\n[協] 14🤝')
         self.assertEqual(len(songs[0]['sheets']), 1)
         self.assertNotIn('all_sheets', songs[0])
 

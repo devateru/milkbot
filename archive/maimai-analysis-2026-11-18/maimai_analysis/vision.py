@@ -60,6 +60,7 @@ TEXT = {
 }
 DIFFICULTY = re.compile(r'\b(RE\s*[:：.]?\s*MASTER|MASTER|EXPERT|ADVANCED|BASIC)\b', re.I)
 KIND = re.compile(r'\b(DX|DELUXE|STD|STANDARD|ST)\b', re.I)
+RESULT_TRACK = re.compile(r'\bTRACK\s*[(O0]\s*([1-5])', re.I)
 PERCENT = re.compile(r'(?<![\d.+−-])([0-9]{1,3}[.][0-9]{4})\s*%(?!\d)')
 CLOCK = re.compile(r'(\d{2})[./-](\d{2})[./-](\d{2})\s+(\d{2}):(\d{2}):(\d{2})')
 SEOUL = ZoneInfo('Asia/Seoul')
@@ -454,12 +455,14 @@ class Vision:
                       if re.search(TEXT[phase], header)), 'unknown')
         if active and phase == 'unknown':
             label = self.read(img, 'clear', threshold=135, invert=True, psm=11).text.upper()
-            stamp = self.read(img, 'result_track', scale=4).text.upper()
-            if (re.search(r'\b(?:CLEAR|FAILED|TRACK\s*RESULT)\b', label)
-                    or (self.loss_of_play is not None and timestamp - self.loss_of_play >= 0.5
-                        and re.search(r'\bTRACK\s*[(O0]', stamp))):
+            if re.search(r'\b(?:CLEAR|FAILED|TRACK\s*RESULT)\b', label):
                 phase = 'result'
-            elif re.search(TEXT['skip'], self.read(img, 'round_skip', psm=11).text.upper()):
+            elif timestamp - self.loss_of_play >= 0.5:
+                stamp = self.read(img, 'result_track', psm=11, threshold=235, invert=True, scale=4)
+                match = RESULT_TRACK.search(stamp.text) or RESULT_TRACK.search(self.read(img, 'result_track', scale=4).text)
+                if match and (tracker.last_track is None or int(match[1]) == tracker.last_track):
+                    phase = 'result'
+            if phase == 'unknown' and re.search(TEXT['skip'], self.read(img, 'round_skip', psm=11).text.upper()):
                 phase = 'skip'
         if active and phase in {'skip', 'result'}:
             finished_at = self.loss_of_play if self.loss_of_play is not None else timestamp

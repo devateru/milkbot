@@ -91,6 +91,27 @@ class FeedbackTests(unittest.TestCase):
             self.assertNotEqual(view.player_name(canvas).text, 'Paste☆ΣΣ')
             plate[:, 41:] = glyphs
 
+    def test_result_without_clear_banner_requires_the_matching_track_stamp(self):
+        import numpy as np
+
+        view = Vision(1280, 720, ocr=Mock())
+        image = FrameImage(11, np.zeros((720, 1280), dtype=np.uint8).tobytes())
+        view.gameplay = Mock(return_value=False)
+        view.track_number = Mock(return_value=1)
+        tracker = Tracker(lambda _: self.chart, lambda _: False, 'right')
+        tracker.last_track = 1
+        tracker.active = Play(self.chart, 'GUEST', 95, 5, seat='right', guest=True)
+        for stamp, expected in [('TRACK O 1', 'result'), ('TRACK 02', 'unknown'), ('TRACK 1', 'unknown')]:
+            with self.subTest(stamp=stamp):
+                view.reset()
+                view.loss_of_play = 10
+                view.read = Mock(side_effect=lambda img, key, *args, **kwargs:
+                                 Reading(stamp, 85) if key == 'result_track' and kwargs.get('invert') else Reading())
+                frame = view.inspect(image, tracker, live=True)
+                self.assertEqual(frame.phase, expected)
+                if expected == 'result':
+                    self.assertEqual(frame.end_time, 10)
+
     def test_guest_attribution_needs_one_eligible_user_and_one_identifiable_guest(self):
         guest = Play(self.chart, 'GUEST', 98, 10, seat='right', guest=True)
         left = Play(self.chart, 'Milk', 98, 10, seat='left')

@@ -30,6 +30,12 @@ class SongCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(difficulty.display_name, '난이도')
         self.assertEqual(len(difficulty.choices), 5)
 
+    def test_analysis_commands_are_retired(self):
+        commands = {command.name for command in self.namespace['tree'].get_commands()}
+        self.assertTrue({'곡검색', '겜플라이브'} <= commands)
+        self.assertTrue(commands.isdisjoint({'목표설정', '구간확인', '영상분석', '라이브분석', '라이브분석-게스트토글'}))
+        self.assertNotIn('get_analysis', self.namespace)
+
     async def test_search_sends_embed_without_reroll_and_explains_fallback(self):
         interaction = Mock()
         interaction.response.send_message = AsyncMock()

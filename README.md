@@ -6,4 +6,4 @@ welcome to milkbot repo!
 
 선택한 채보의 노트 수, 배점과 판정별 감소율: [노트 배점](docs/note-scores.md)
 
-게임플라자 maimai 다시보기·라이브 분석과 Ubuntu 설치 방법은 [영상 분석](docs/maimai-analysis.md)을 참고하세요.
+2026-11-18에 중단한 maimai 영상·라이브 분석 코드와 재개 메모는 [분석 기능 보관본](archive/maimai-analysis-2026-11-18/README.md)에 있습니다.

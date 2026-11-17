@@ -12,8 +12,6 @@ import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
-from maimai_analysis.commands import register_analysis
-from maimai_analysis.service import AnalysisService
 from thumbnail_board import build_gameplaza_thumbnail_board
 from youtube_live import (
     MachineStatus,
@@ -27,7 +25,6 @@ from song_presentation import format_song_constants
 from song_filter import get_song_filters
 
 load_dotenv(".env")
-os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 BOT_DEVELOPER_ID = os.getenv("BOT_DEVELOPER_ID")
@@ -44,22 +41,13 @@ if not BOT_DEVELOPER_ID:
 BOT_DEVELOPER_ID = int(BOT_DEVELOPER_ID)
 
 
-class MilkbotClient(discord.Client):
-    async def close(self) -> None:
-        if _analysis is not None:
-            await _analysis.close()
-        await super().close()
-
-
 intents = discord.Intents.default()
-client = MilkbotClient(intents=intents)
+client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 _synced = False
 _update_dm_sent = False
 _song_lookup = None
 _song_lookup_task = None
-_analysis = None
-_analysis_lock = asyncio.Lock()
 
 
 async def refresh_song_lookup() -> None:
@@ -74,8 +62,6 @@ async def keep_song_lookup_updated() -> None:
     while not client.is_closed():
         await asyncio.sleep(3600 if _song_lookup is not None else 60)
         await refresh_song_lookup()
-        if _song_lookup is not None and _analysis is None:
-            await initialize_analysis()
 
 
 # =========================================================
@@ -824,31 +810,6 @@ async def autocomplete_song(interaction: discord.Interaction, current: str) -> l
             for option in _song_lookup.autocomplete(current)]
 
 
-async def open_analysis_dm(user_id: int) -> discord.DMChannel:
-    user = client.get_user(user_id) or await client.fetch_user(user_id)
-    return await user.create_dm()
-
-
-async def get_analysis() -> AnalysisService:
-    global _analysis
-    async with _analysis_lock:
-        if _analysis is None:
-            analysis = await AnalysisService.create(lambda: _song_lookup, open_analysis_dm)
-            await analysis.start()
-            _analysis = analysis
-        return _analysis
-
-
-async def initialize_analysis() -> None:
-    try:
-        await get_analysis()
-    except Exception:
-        logging.getLogger(__name__).exception("maimai 영상 분석을 초기화하지 못했습니다.")
-
-
-register_analysis(tree, get_analysis, lambda: _song_lookup, autocomplete_song, make_song_embed)
-
-
 @tree.command(name="겜플라이브", description="게임플라자 라이브 상태를 확인합니다.")
 @app_commands.allowed_installs(guilds=True, users=True)
 @app_commands.allowed_contexts(
@@ -955,9 +916,6 @@ async def on_ready() -> None:
     if not _update_dm_sent:
         await notify_developer_update()
         _update_dm_sent = True
-
-    if _song_lookup is not None:
-        await initialize_analysis()
 
     print(f"Logged in as {client.user}")
 

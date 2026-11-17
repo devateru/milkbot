@@ -17,7 +17,7 @@ python bot.py
 
 기존 서비스로 실행하는 경우 작업 디렉터리를 저장소 루트로 지정하고, 위 가상환경의 Python으로 `bot.py`를 실행합니다. `.env`에 기존 봇의 `DISCORD_TOKEN`과 `BOT_DEVELOPER_ID`를 설정합니다. 봇과 분석 작업은 같은 프로세스에서 실행합니다. YouTube 영상 입력은 yt-dlp로 열며, YouTube Data API 키는 기존 `/겜플라이브`에서 사용합니다.
 
-YouTube 스트림을 받으려면 봇의 실행 환경에서 yt-dlp가 지원하는 Deno 또는 Node.js를 사용할 수 있게 설정합니다. Deno의 절대 경로는 `MAIMAI_YOUTUBE_DENO`로 지정할 수 있습니다. 잘 열리던 영상이 실패하면 봇의 가상환경에서 `python -m pip install -U 'yt-dlp[default]'`를 실행하고 서비스를 재시작합니다. 추출 실패의 상세 원인은 봇 로그에서 영상 ID로 찾을 수 있습니다. [yt-dlp 런타임 설정](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
+YouTube 스트림을 받으려면 봇의 실행 환경에서 yt-dlp가 지원하는 Deno 또는 Node.js를 사용할 수 있게 설정합니다. Deno의 절대 경로는 `MAIMAI_YOUTUBE_DENO`로 지정할 수 있습니다. 스트림 추출이 실패하면 봇의 가상환경에서 `python -m pip install -U 'yt-dlp[default]>=2026.10.21'`을 실행한 뒤 `python -m yt_dlp --version`을 확인하고 서비스를 재시작합니다. `2026.10.21`은 Ubuntu 22.04 기본 Python 3.10에 설치되는 버전입니다. 추출 실패가 계속되면 봇 로그의 `maimai YouTube resolve failed` 줄에서 영상 ID, 사용 중인 yt-dlp 버전, YouTube의 응답을 확인합니다. [yt-dlp 런타임 설정](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
 
 | 환경 변수 | 기본값 | 용도 |
 | --- | --- | --- |

@@ -153,10 +153,11 @@ class Delivery:
             if detail := job.reports.get(play_key(play)):
                 line += f' · [구간 결과](https://discord.com/channels/@me/{channel.id}/{detail})'
             blocks.append(line)
-        if not blocks:
-            blocks.append('설정에 맞는 플레이를 확인하지 못했습니다.')
         if job.error:
-            blocks.append(f'일부 분석을 완료하지 못했습니다. {job.error}')
+            status = '일부 분석을 완료하지 못했습니다.' if blocks else '영상 분석을 완료하지 못했습니다.'
+            blocks.append(f'{status} {job.error}')
+        elif not blocks:
+            blocks.append('설정에 맞는 플레이를 확인하지 못했습니다.')
         for i, embed in enumerate(paginated('통합 플레이 기록', blocks)):
             previous = job.history[i] if i < len(job.history) else None
             identifier = await self.update(channel, previous, embed=embed)

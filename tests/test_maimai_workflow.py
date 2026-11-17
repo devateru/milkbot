@@ -211,6 +211,16 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         cached = self.store.cached_chart(self.cached.url, self.chart.key)
         self.assertEqual([note.lane for note in cached.chart.notes], [1, 4, 8, None, 1, None])
 
+    async def test_failed_vod_history_reports_the_input_error(self):
+        channel = Mock(send=AsyncMock(return_value=Mock(id=1)))
+        delivery = Delivery(self.store, AsyncMock(return_value=channel))
+        job = Job(1, self.video, False, 0, None, 'Milk', None,
+                  error='YouTube에서 분석 가능한 스트림을 가져오지 못했습니다.')
+        await delivery.history(job)
+        report = channel.send.await_args.kwargs['embed'].description
+        self.assertIn(job.error, report)
+        self.assertNotIn('설정에 맞는 플레이를 확인하지 못했습니다.', report)
+
     async def test_restart_keeps_settings_and_forgets_playback_jobs(self):
         self.store.set_nickname(1, 'Milk')
         self.store.save_target(1, self.chart.key, self.cached, parse_sections('1:-.1', self.simai))

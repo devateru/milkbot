@@ -44,6 +44,7 @@ class Image:
 
 def resolve(video: Video, live: bool, height: int) -> Source:
     import yt_dlp
+    from yt_dlp.version import __version__
 
     hls = f'bv*[protocol^=m3u8][height<={height}]'
     fmt = (f'b[protocol^=m3u8][height<={height}]/{hls}' if live else
@@ -57,7 +58,8 @@ def resolve(video: Video, live: bool, height: int) -> Source:
             row = downloader.extract_info(video.url, download=False)
     except yt_dlp.utils.DownloadError as error:
         reason = re.sub(r'https?://\S+', '[URL]', str(error))
-        log.warning('maimai YouTube resolve failed video=%s live=%s: %s', video.id, live, reason)
+        log.warning('maimai YouTube resolve failed video=%s live=%s yt_dlp=%s: %s',
+                    video.id, live, __version__, reason)
         raise MediaError('YouTube에서 분석 가능한 스트림을 가져오지 못했습니다.') from error
     if row.get('is_live', False) != live:
         raise MediaError('현재 방송 중인 영상만 라이브 분석에서 열 수 있습니다.' if live else
